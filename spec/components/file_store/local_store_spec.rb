@@ -86,4 +86,33 @@ describe LocalStore do
 
   end
 
+  describe "extract_upload_id" do
+
+  let(:upload) { build(:attachment) }
+
+    it "checks the url for the relative_base_url" do
+      Upload.expects(:where).never
+      store.extract_upload_id("www.google.com").should == nil
+    end
+
+    it "returns nil when the upload does not exist" do
+      url = store.relative_base_url
+      Upload.expects(:where).with(url: url).returns([]).once
+      store.extract_upload_id(url).should == nil
+    end
+
+    it "works with relative_base_url" do
+      url = store.relative_base_url
+      Upload.expects(:where).with(url: url).returns([upload]).once
+      store.extract_upload_id(url).should == upload.id
+    end
+
+    it "works with absolute url" do
+      url = "http://meta.discourse.org#{store.relative_base_url}"
+      Upload.expects(:where).returns([upload]).once
+      store.extract_upload_id(url).should == upload.id
+    end
+
+  end
+
 end

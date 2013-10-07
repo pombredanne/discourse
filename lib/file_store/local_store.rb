@@ -57,6 +57,13 @@ class LocalStore
     avatar_template(upload, absolute_base_url)
   end
 
+  def extract_upload_id(url)
+    if index = url.index(relative_base_url)
+      url = url[index..-1]
+      Upload.where(url: url).first.try(:id)
+    end
+  end
+
   private
 
   def get_path_for_upload(file, upload)

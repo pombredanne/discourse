@@ -94,4 +94,27 @@ describe S3Store do
 
   end
 
+  describe "extract_upload_id" do
+
+    let(:upload) { build(:attachment) }
+
+    it "returns nil when the upload has not been uploaded to S3" do
+      Upload.expects(:where).never
+      store.extract_upload_id("www.google.com").should == nil
+    end
+
+    it "returns nil when the upload does not exist" do
+      url = store.absolute_base_url
+      Upload.expects(:where).with(url: url).returns([]).once
+      store.extract_upload_id(url).should == nil
+    end
+
+    it "works when the upload has been uploaded to S3" do
+      url = store.absolute_base_url
+      Upload.expects(:where).with(url: url).returns([upload]).once
+      store.extract_upload_id(url).should == upload.id
+    end
+
+  end
+
 end

@@ -89,6 +89,11 @@ class S3Store
     temp_file
   end
 
+  def extract_upload_id(url)
+    return unless has_been_uploaded?(url)
+    Upload.where(url: url).first.try(:id)
+  end
+
   private
 
   def s3_bucket
