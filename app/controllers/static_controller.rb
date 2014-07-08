@@ -5,6 +5,8 @@ class StaticController < ApplicationController
 
   def show
 
+    return redirect_to('/') if current_user && params[:id] == 'login'
+
     map = {
       "faq" => "faq_url",
       "tos" => "tos_url",
@@ -54,5 +56,23 @@ class StaticController < ApplicationController
         params[:redirect]
       end
     )
+  end
+
+  skip_before_filter :verify_authenticity_token, only: [:cdn_asset]
+  def cdn_asset
+    path = params[:path].gsub(/[^a-zA-Z0-9_\-\.]/, "")
+    path = (Rails.root + "public/assets/" + path).to_s
+    expires_in 1.year, public: true
+    response.headers["Access-Control-Allow-Origin"] = params[:origin]
+    begin
+      response.headers["Last-Modified"] = File.ctime(path).httpdate
+    rescue Errno::ENOENT
+      raise Discourse::NotFound
+    end
+    opts = {
+      disposition: nil
+    }
+    opts[:type] = "application/x-javascript" if path =~ /\.js$/
+    send_file(path, opts)
   end
 end

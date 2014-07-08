@@ -8,6 +8,8 @@
 **/
 Discourse.SiteSetting = Discourse.Model.extend({
 
+  validationMessage: null,
+
   /**
     Is the boolean setting true?
 
@@ -23,13 +25,18 @@ Discourse.SiteSetting = Discourse.Model.extend({
     } else {
       // set the boolean value of the setting
       this.set('value', value ? 'true' : 'false');
-
-      // We save booleans right away, it's not like a text field where it makes sense to
-      // undo what you typed in.
-      this.save();
     }
 
   }.property('value'),
+
+  /**
+    The name of the setting. Basically, underscores in the setting key are replaced with spaces.
+
+    @property settingName
+  **/
+  settingName: function() {
+    return this.get('setting').replace(/\_/g, ' ');
+  }.property('setting'),
 
   /**
     Has the user changed the setting? If so we should save it.
@@ -62,6 +69,7 @@ Discourse.SiteSetting = Discourse.Model.extend({
   **/
   resetValue: function() {
     this.set('value', this.get('originalValue'));
+    this.set('validationMessage', null);
   },
 
   /**
@@ -71,12 +79,20 @@ Discourse.SiteSetting = Discourse.Model.extend({
   **/
   save: function() {
     // Update the setting
-    var setting = this;
-    return Discourse.ajax("/admin/site_settings/" + (this.get('setting')), {
-      data: { value: this.get('value') },
+    var self = this, data = {};
+    data[this.get('setting')] = this.get('value');
+    return Discourse.ajax("/admin/site_settings/" + this.get('setting'), {
+      data: data,
       type: 'PUT'
     }).then(function() {
-      setting.set('originalValue', setting.get('value'));
+      self.set('originalValue', self.get('value'));
+      self.set('validationMessage', null);
+    }, function(e) {
+      if (e.responseJSON && e.responseJSON.errors) {
+        self.set('validationMessage', e.responseJSON.errors[0]);
+      } else {
+        self.set('validationMessage', I18n.t('generic_error'));
+      }
     });
   },
 
@@ -103,21 +119,25 @@ Discourse.SiteSetting = Discourse.Model.extend({
 
 Discourse.SiteSetting.reopenClass({
 
-  /**
-    Retrieve all settings from the server
-
-    @method findAll
-  **/
   findAll: function() {
-    var result = Em.A();
-    Discourse.ajax("/admin/site_settings").then(function (settings) {
+    return Discourse.ajax("/admin/site_settings").then(function (settings) {
+      // Group the results by category
+      var categoryNames = [],
+          categories = {},
+          result = Em.A();
       _.each(settings.site_settings,function(s) {
         s.originalValue = s.value;
-        result.pushObject(Discourse.SiteSetting.create(s));
+        if (!categoryNames.contains(s.category)) {
+          categoryNames.pushObject(s.category);
+          categories[s.category] = Em.A();
+        }
+        categories[s.category].pushObject(Discourse.SiteSetting.create(s));
       });
-      result.set('diags', settings.diags);
+      _.each(categoryNames, function(n) {
+        result.pushObject({nameKey: n, name: I18n.t('admin.site_settings.categories.' + n), siteSettings: categories[n]});
+      });
+      return result;
     });
-    return result;
   },
 
   update: function(key, value) {
@@ -126,6 +146,7 @@ Discourse.SiteSetting.reopenClass({
       data: { value: value }
     });
   }
+
 });
 
 

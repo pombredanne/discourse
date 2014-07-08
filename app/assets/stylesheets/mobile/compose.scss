@@ -1,8 +1,5 @@
 // styles that apply to the reply pane that slides up to compose replies
 
-@import "../common/foundation/variables";
-@import "../common/foundation/mixins";
-
 // hack, this needs to be done cleaner
 .private-message input.span8 {
   width: 47%;
@@ -16,70 +13,41 @@ display: none;
 display: none;
 }
 
-
-
-
-.autocomplete {
-  z-index: 999999;
-  position: absolute;
-  width: 240px;
-  background-color: $white;
-  border: 1px solid $gray;
-  ul {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    li {
-      border-bottom: 1px solid $light_gray;
-      a[href] {
-        padding: 5px;
-        display: block;
-        span.username {
-          color: lighten($black, 20);
-        }
-        span.name {
-          font-size: 11px;
-        }
-        &.selected {
-          background-color: $light_gray;
-        }
-        @include hover {
-          background-color: $light_gray;
-          text-decoration: none;
-        }
-      }
-    }
-  }
-}
-
 #reply-control {
-  .toggle-preview, #draft-status, #file-uploading {
+  .composer-bottom-right {
     position: absolute;
-    bottom: -31px;
-    margin-top: 0px;
-  }
-  .toggle-preview {
+    bottom: -37px;
     right: 5px;
+    margin-top: 0;
+  }
+  .toggle-preview { display:none; }
+  .mobile-file-upload {
+    text-decoration: underline;
+  }
+  #draft-status, #file-uploading, .mobile-file-upload {
+    float: right;
+    margin-right: 8px;
+  }
+  .mobile-file-upload {
     text-decoration: underline;
   }
   #file-uploading {
     left: 51%;
     font-size: 12px;
-    color: darken($gray, 40);
+    color: scale-color($secondary, $lightness: 50%);
   }
   #draft-status {
-    right: 0;
-    color: lighten($black, 60);
+    color: scale-color($primary, $lightness: 75%);
     &.flash {
-      color: lighten($red, 20);
+      color: $danger;
     }
   }
   @include transition(height 0.4s ease);
   width: 100%;
   z-index: 1039;
-  height: 0px;
-  background-color: rgba($composer_background, 0.96);
-  bottom: 0px;
+  height: 0;
+  background-color: scale-color-diff();
+  bottom: 0;
   font-size: 14px;
   position: fixed;
   .toggler {
@@ -89,7 +57,7 @@ display: none;
     right: 13px;
     position: absolute;
     font-size: 15px;
-    color: $darkish_gray;
+    color: scale-color($primary, $lightness: 50%);
     text-decoration: none;
     &:before {
       font-family: "FontAwesome";
@@ -116,18 +84,16 @@ display: none;
   }
   // The various states
   &.open {
-    height: 300px;
-    .grippie {
-      display: block;
-    }
+    max-height: 100%; // ensure no overflow e.g. on small Android
+    height: 270px;
   }
   &.closed {
-    height: 0px !important;
+    height: 0 !important;
   }
   &.draft {
     height: 60px !important;
     cursor: pointer;
-    border-top: 1px solid $gray;
+    border-top: 1px solid scale-color-diff();
     .draft-text {
       display: block;
           position: absolute;
@@ -142,7 +108,7 @@ display: none;
   }
   &.saving {
     height: 40px !important;
-    border-top: 1px solid $gray;
+    border-top: 1px solid scale-color-diff();
     .saving-text {
       display: block;
     }
@@ -164,7 +130,7 @@ display: none;
     height: 70px;
     text-indent: -9999em;
     background: {
-      color: $black;
+      color: #000;
       image: image-url("spinner_96_w.gif");
       repeat: no-repeat;
       size: 35px;
@@ -179,32 +145,33 @@ display: none;
   }
   .reply-area {
     max-width: 1500px;
-    margin-left: auto;
     margin-right: auto;
     float: none;
   }
 
-  // When the post is new (new topic) the sizings are different
+  // if this is a new topic, make room for the category field in the editor on
+  // a small screen mobile device
   &.edit-title {
     &.open {
-      height: 400px;
+      max-height: 100%; // ensure no overflow e.g. on small Android
+      height: 250px;
     }
     .contents {
       input#reply-title {
         padding: 7px 10px;
-        margin: 6px 10px 3px 0;
+        margin: 6px 10px 0 0;
       }
       .wmd-controls {
         @include transition(top 0.3s ease);
-        top: 100px;
+        top: 120px;
       }
     }
   }
   .contents {
-    padding: 10px;
+    padding: 10px 10px 0 10px;
     min-width: 1280px;
     .form-element {
-      .chzn-container {
+      .select2-container {
         width: 400px;
         margin-top: 6px;
         a {
@@ -220,47 +187,47 @@ display: none;
         @include medium-width { width: 285px; }
         @include small-width { width: 220px; }
 
-        .chzn-drop {
+        .select2-drop {
           left: -9000px;
           width: 428px;
           @include medium-width { width: 283px; }
           @include small-width { width: 218px; }
         }
-        .chzn-search input {
-          width: 378px;
-          @include medium-width { width: 233px; }
-          @include small-width { width: 168px; }
-        }
+      }
+    }
+    .edit-reason-input, .display-edit-reason {
+      display: none;
+    }
+    .edit-reason-input {
+      display: inline-block;
+      margin-left: 2px;
+      #edit-reason {
+        margin: 0;
+        padding: 2px;
       }
     }
     #reply-title {
       margin-right: 10px;
-      float: left;
       &:disabled {
-        background-color: $light_gray;
+        background-color: scale-color($primary, $lightness: 75%);
       }
     }
     #wmd-input:disabled {
-      background-color: $light_gray;
+      background-color: scale-color($primary, $lightness: 75%);
     }
     #wmd-input, #wmd-preview {
-      color: $black;
-
+      color: darken($primary, 40%);
+    }
+    #wmd-preview {
+      border: 1px dashed scale-color-diff();
+      overflow: auto;
+      visibility: visible;
       video {
         max-width: 100%;
         height: auto;
       }
-
       audio {
         max-width: 100%;
-      }
-    }
-    #wmd-preview {
-      border: 1px dashed $gray;
-      overflow: auto;
-      visibility: visible;
-      p {
-        margin-top: 0;
       }
       &.hidden {
         width: 0;
@@ -273,97 +240,37 @@ display: none;
     .submit-panel {
       position: absolute;
       display: block;
-      bottom: 8px;
+      bottom: 2px;
     }
   }
-  .title-input, .category-input {
-    position: relative;
+  .category-input {
     display: inline;
   }
   .title-input .popup-tip {
-    width: 300px;
-    left: -8px;
-    margin-top: 8px;
+    width: 240px;
+    right: 5px;
   }
   .category-input .popup-tip {
     width: 240px;
-    left: 432px;
-    top: -7px;
+    right: 5px;
+  }
+  .textarea-wrapper .popup-tip {
+    top: 28px;
+  }
+  button.btn.no-text {
+    margin: 7px 0 0 5px;
+    position: absolute;
   }
 }
-.reply-to  {
-  margin-bottom: 10px;
-  position: absolute;
-  margin-right: 40px;
-
-}
-
-
-
-div.ac-wrap.disabled {
-  input {
-    display:none;
-  }
-  .item a {
-    display:none;
-  }
-}
-
-div.ac-wrap {
-  background-color: $white;
-  border: 1px solid #cccccc;
-  padding: 5px 10px;
-  @include border-radius-all(3px);
-  div.item {
-    float: left;
-    margin-right: 10px;
-    margin-bottom: 5px;
-    span {
-      padding-left: 5px;
-      height: 22px;
-      display: inline-block;
-      line-height: 22px;
-      vertical-align: bottom;
-    }
-    a {
-      margin-left: 4px;
-      font-size: 10px;
-      line-height: 10px;
-      padding: 2px 1px 1px 3px;
-      border-radius: 10px;
-      width: 10px;
-      display: inline-block;
-      border: 1px solid rgba(255, 255, 255, 0);
-      &:hover {
-        background-color: lighten($red, 45);
-        border: 1px solid lighten($red, 20);
-        text-decoration: none;
-        color: $white;
-      }
-    }
-  }
-  input[type="text"] {
-    float: left;
-    margin-top: 5px;
-    border: 0;
-    padding: 0;
-    margin: 4px 0 0;
-    box-shadow: none;
-    font-size: 16px;
-  }
-}
-#reply-control .wmd-controls #wmd-input {font-size: 16px;}
 
 #reply-control.edit-title.private-message {
   .wmd-controls {
     @include transition(top 0.3s ease);
-    top: 140px;
+    top: 120px;
   }
 }
 
 #reply-control {
-
-
   &.hide-preview {
     .wmd-controls {
       #wmd-input {
@@ -381,48 +288,44 @@ div.ac-wrap {
     left: 10px;
     right: 10px;
     position: absolute;
-    top: 60px;
+    top: 40px;
     bottom: 54px;
     display: block;
 
     // this removes the topmost margin;
     // if we don't have this, all posts would have extra space at the top
     #wmd-preview > *:first-child {
-      margin-top: 0px !important;
+      margin-top: 0 !important;
     }
 
-    #wmd-input, #wmd-preview {
-      box-sizing: border-box;
-      -moz-box-sizing: border-box;
+    #wmd-input, #wmd-preview-scroller, #wmd-preview {
+      @include box-sizing(border-box);
       width: 100%;
       height: 100%;
       min-height: 100%;
       padding: 7px;
       margin: 0;
-      background-color: $white;
+      background-color: $secondary;
       word-wrap: break-word;
-
-      // set up proper header margins in post preview
-      h1, h2, h3, h4, h5, h6 {
-        margin: 20px 0 10px;
-      }
     }
-    #wmd-input {
+    #wmd-input, #wmd-preview-scroller {
       position: absolute;
       left: 0;
       top: 0;
-      height: 100%;
-      min-height: 100%;
-      box-sizing: border-box;
-      border: 0;
-      border-top: 36px solid transparent;
-      @include border-radius-all(0);
-      transition: none;
+      font-size: 16px;
+    }
+    #wmd-preview-scroller {
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      overflow: scroll;
+      visibility: hidden;
+      .marker, .caret {
+        display: inline-block;
+        vertical-align: top;
+      }
     }
     .textarea-wrapper, .preview-wrapper {
       position: relative;
-      box-sizing: border-box;
-      -moz-box-sizing: border-box;
+      @include box-sizing(border-box);
       height: 100%;
       min-height: 100%;
       margin: 0;
@@ -443,50 +346,13 @@ div.ac-wrap {
     }
   }
   #wmd-button-bar {
-    top: 0;
-    position: absolute;
-    border-bottom: 1px solid $inner_line;
-    background-color: $white;
-    z-index: 100;
+    display: none;
   }
 }
 
-.control-row.reply-area {
-
-}
-
-@media screen and (min-width: 1550px) {
-  #reply-control {
-    .wmd-controls {
-      width: 1450px;
-      left: auto;
-      right: auto;
-    }
-  }
-}
-
-.admin-options-form {
-  margin-top: 8px;
-  display: none;
-}
-
-.auto-close-fields {
-  input {
-    width: 50px;
-  }
-}
-
-.edit-auto-close-modal {
-  form {
-    margin: 0;
-  }
-  .auto-close-fields {
-    i.icon-time {
-      font-size: 16px;
-      line-height: 8px;
-    }
-    input {
-      margin: 0;
-    }
-  }
+// make sure the category selector *NEVER* gets focus by default on mobile anywhere
+.select2-hidden,
+.select2-search,
+.select2-focusser {
+  display:none !important;
 }

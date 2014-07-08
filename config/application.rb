@@ -1,24 +1,33 @@
 require File.expand_path('../boot', __FILE__)
 require 'rails/all'
-require 'redis-store' # HACK
 
 # Plugin related stuff
 require_relative '../lib/discourse_plugin_registry'
 
+# Global config
+require_relative '../app/models/global_setting'
+
+require 'pry-rails' if Rails.env == "development"
+
 if defined?(Bundler)
-  # If you precompile assets before deploying to production, use this line
   Bundler.require(*Rails.groups(assets: %w(development test profile)))
-  # If you want your assets lazily compiled in production, use this line
-  # Bundler.require(:default, :assets, Rails.env)
 end
 
 module Discourse
   class Application < Rails::Application
+    def config.database_configuration
+      if Rails.env == "production"
+        GlobalSetting.database_config
+      else
+        super
+      end
+    end
     # Settings in config/environments/* take precedence over those specified here.
     # Application configuration should go into files in config/initializers
     # -- all .rb files in that directory are automatically loaded.
 
     require 'discourse'
+    require 'es6_module_transpiler/rails'
     require 'js_locale_helper'
 
     # mocha hates us, active_support/testing/mochaing.rb line 2 is requiring the wrong
@@ -42,7 +51,12 @@ module Discourse
 
     config.assets.paths += %W(#{config.root}/config/locales)
 
-    config.assets.precompile += ['common.css', 'desktop.css', 'mobile.css', 'admin.js', 'admin.css', 'shiny/shiny.css', 'preload_store.js']
+    # explicitly precompile any images in plugins ( /assets/images ) path
+    config.assets.precompile += [lambda do |filename, path|
+      path =~ /assets\/images/ && !%w(.js .css).include?(File.extname(filename))
+    end]
+
+    config.assets.precompile += ['vendor.js', 'common.css', 'desktop.css', 'mobile.css', 'admin.js', 'admin.css', 'shiny/shiny.css', 'preload_store.js', 'browser-update.js', 'embed.css', 'break_string.js']
 
     # Precompile all defer
     Dir.glob("#{config.root}/app/assets/javascripts/defer/*.js").each do |file|
@@ -66,15 +80,22 @@ module Discourse
     # Run "rake -D time" for a list of tasks for finding time zone names. Default is UTC.
     config.time_zone = 'Eastern Time (US & Canada)'
 
-    # The default locale is :en and all translations from config/locales/*.rb,yml are auto loaded.
-    # config.i18n.load_path += Dir[Rails.root.join('my', 'locales', '*.{rb,yml}').to_s]
-    # config.i18n.default_locale = :de
+    # auto-load server locale in plugins
+    config.i18n.load_path += Dir["#{Rails.root}/plugins/*/config/locales/server.*.yml"]
 
     # Configure the default encoding used in templates for Ruby 1.9.
     config.encoding = 'utf-8'
 
     # Configure sensitive parameters which will be filtered from the log file.
-    config.filter_parameters += [:password]
+    config.filter_parameters += [
+        :password,
+        :pop3s_polling_password,
+        :s3_secret_access_key,
+        :twitter_consumer_secret,
+        :facebook_app_secret,
+        :github_client_secret,
+        :discourse_org_access_key,
+    ]
 
     # Enable the asset pipeline
     config.assets.enabled = true
@@ -92,11 +113,6 @@ module Discourse
     config.pbkdf2_iterations = 64000
     config.pbkdf2_algorithm = "sha256"
 
-    # dumping rack lock cause the message bus does not work with it (throw :async, it catches Exception)
-    # see: https://github.com/sporkrb/spork/issues/66
-    # rake assets:precompile also fails
-    config.threadsafe! unless rails4? || $PROGRAM_NAME =~ /spork|rake/
-
     # rack lock is nothing but trouble, get rid of it
     # for some reason still seeing it in Rails 4
     config.middleware.delete Rack::Lock
@@ -108,8 +124,11 @@ module Discourse
     config.handlebars.templates_root = 'discourse/templates'
 
     require 'discourse_redis'
+    require 'logster/redis_store'
     # Use redis for our cache
     config.cache_store = DiscourseRedis.new_redis_store
+    $redis = DiscourseRedis.new
+    Logster.store = Logster::RedisStore.new(DiscourseRedis.new)
 
     # we configure rack cache on demand in an initializer
     # our setup does not use rack cache and instead defers to nginx
@@ -120,16 +139,8 @@ module Discourse
     config.ember.ember_location = "#{Rails.root}/vendor/assets/javascripts/production/ember.js"
     config.ember.handlebars_location = "#{Rails.root}/vendor/assets/javascripts/handlebars.js"
 
-    # Since we are using strong_parameters, we can disable and remove
-    # attr_accessible.
-    config.active_record.whitelist_attributes = false
-
-
-    require 'plugin'
     require 'auth'
-    unless Rails.env.test?
-      Discourse.activate_plugins!
-    end
+    Discourse.activate_plugins! unless Rails.env.test? and ENV['LOAD_PLUGINS'] != "1"
 
     config.after_initialize do
       # So open id logs somewhere sane
@@ -139,10 +150,9 @@ module Discourse
       end
     end
 
-    # This is not really required per-se, but we do not want to support
-    # XML params, we see errors in our logs about malformed XML and there
-    # absolutly no spot in our app were we use XML as opposed to JSON endpoints
-    ActionDispatch::ParamsParser::DEFAULT_PARSERS.delete(Mime::XML)
+    if ENV['RBTRACE'] == "1"
+      require 'rbtrace'
+    end
 
   end
 end

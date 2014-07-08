@@ -116,8 +116,8 @@ describe UserAction do
     context "successful like" do
       before do
         PostAction.act(liker, post, PostActionType.types[:like])
-        @liker_action = liker.user_actions.where(action_type: UserAction::LIKE).first
-        @likee_action = likee.user_actions.where(action_type: UserAction::WAS_LIKED).first
+        @liker_action = liker.user_actions.find_by(action_type: UserAction::LIKE)
+        @likee_action = likee.user_actions.find_by(action_type: UserAction::WAS_LIKED)
       end
 
       it 'should result in correct data assignment' do
@@ -149,13 +149,18 @@ describe UserAction do
   end
 
   describe 'when a user posts a new topic' do
+    def process_alerts(post)
+      PostAlerter.post_created(post)
+    end
+
     before do
       @post = Fabricate(:old_post)
+      process_alerts(@post)
     end
 
     describe 'topic action' do
       before do
-        @action = @post.user.user_actions.where(action_type: UserAction::NEW_TOPIC).first
+        @action = @post.user.user_actions.find_by(action_type: UserAction::NEW_TOPIC)
       end
       it 'should exist' do
         @action.should_not be_nil
@@ -164,7 +169,7 @@ describe UserAction do
     end
 
     it 'should not log a post user action' do
-      @post.user.user_actions.where(action_type: UserAction::REPLY).first.should be_nil
+      @post.user.user_actions.find_by(action_type: UserAction::REPLY).should be_nil
     end
 
 
@@ -173,12 +178,14 @@ describe UserAction do
         @other_user = Fabricate(:coding_horror)
         @mentioned = Fabricate(:admin)
         @response = Fabricate(:post, reply_to_post_number: 1, topic: @post.topic, user: @other_user, raw: "perhaps @#{@mentioned.username} knows how this works?")
+
+        process_alerts(@response)
       end
 
       it 'should log user actions correctly' do
-        @response.user.user_actions.where(action_type: UserAction::REPLY).first.should_not be_nil
-        @post.user.user_actions.where(action_type: UserAction::RESPONSE).first.should_not be_nil
-        @mentioned.user_actions.where(action_type: UserAction::MENTION).first.should_not be_nil
+        @response.user.user_actions.find_by(action_type: UserAction::REPLY).should_not be_nil
+        @post.user.user_actions.find_by(action_type: UserAction::RESPONSE).should_not be_nil
+        @mentioned.user_actions.find_by(action_type: UserAction::MENTION).should_not be_nil
         @post.user.user_actions.joins(:target_post).where('posts.post_number = 2').count.should == 1
       end
 
@@ -196,7 +203,7 @@ describe UserAction do
       @post = Fabricate(:post)
       @user = @post.user
       PostAction.act(@user, @post, PostActionType.types[:bookmark])
-      @action = @user.user_actions.where(action_type: UserAction::BOOKMARK).first
+      @action = @user.user_actions.find_by(action_type: UserAction::BOOKMARK)
     end
 
     it 'should create a bookmark action correctly' do
@@ -206,10 +213,9 @@ describe UserAction do
       @action.user_id.should == @user.id
 
       PostAction.remove_act(@user, @post, PostActionType.types[:bookmark])
-      @user.user_actions.where(action_type: UserAction::BOOKMARK).first.should be_nil
+      @user.user_actions.find_by(action_type: UserAction::BOOKMARK).should be_nil
     end
   end
-
 
   describe 'private messages' do
 
@@ -245,13 +251,13 @@ describe UserAction do
 
   end
 
-  describe 'synchronize_favorites' do
-    it 'corrects out of sync favs' do
+  describe 'synchronize_starred' do
+    it 'corrects out of sync starred' do
       post = Fabricate(:post)
       post.topic.toggle_star(post.user, true)
       UserAction.delete_all
 
-      action1 = UserAction.log_action!(
+      UserAction.log_action!(
         action_type: UserAction::STAR,
         user_id: post.user.id,
         acting_user_id: post.user.id,
@@ -259,7 +265,7 @@ describe UserAction do
         target_post_id: -1,
       )
 
-      action2 = UserAction.log_action!(
+      UserAction.log_action!(
         action_type: UserAction::STAR,
         user_id: Fabricate(:user).id,
         acting_user_id: post.user.id,
@@ -267,7 +273,7 @@ describe UserAction do
         target_post_id: -1,
       )
 
-      UserAction.synchronize_favorites
+      UserAction.synchronize_starred
 
       actions = UserAction.all.to_a
 

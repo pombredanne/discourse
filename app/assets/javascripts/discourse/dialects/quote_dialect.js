@@ -1,24 +1,32 @@
 /**
   Support for quoting other users.
 **/
+
+var esc = Handlebars.Utils.escapeExpression;
+
 Discourse.Dialect.replaceBlock({
-  start: new RegExp("\\[quote=?([^\\[\\]]+)?\\]([\\s\\S]*)", "igm"),
+  start: new RegExp("\\[quote(=[^\\[\\]]+)?\\]([\\s\\S]*)", "igm"),
   stop: '[/quote]',
   emitter: function(blockContents, matches, options) {
 
-    var paramsString = matches[1].replace(/\"/g, ''),
-        params = {'class': 'quote'},
-        paramsSplit = paramsString.split(/\, */),
-        username = paramsSplit[0];
+    var params = {'class': 'quote'},
+        username = null;
 
-    paramsSplit.forEach(function(p,i) {
-      if (i > 0) {
-        var assignment = p.split(':');
-        if (assignment[0] && assignment[1]) {
-          params['data-' + assignment[0]] = assignment[1].trim();
+    if (matches[1]) {
+      var paramsString = matches[1].replace(/^=|\"/g, ''),
+          paramsSplit = paramsString.split(/\,\s*/);
+
+      username = paramsSplit[0];
+
+      paramsSplit.forEach(function(p,i) {
+        if (i > 0) {
+          var assignment = p.split(':');
+          if (assignment[0] && assignment[1]) {
+            params['data-' + esc(assignment[0])] = esc(assignment[1].trim());
+          }
         }
-      }
-    });
+      });
+    }
 
     var avatarImg;
     if (options.lookupAvatarByPostNumber) {
@@ -30,41 +38,46 @@ Discourse.Dialect.replaceBlock({
       avatarImg = options.lookupAvatar(username);
     }
 
+    while (blockContents.length && (typeof blockContents[0] === "string" || blockContents[0] instanceof String)) {
+      blockContents[0] = String(blockContents[0]).replace(/^\s+/, '');
+      if (!blockContents[0].length) {
+        blockContents.shift();
+      } else {
+        break;
+      }
+    }
+
     var contents = ['blockquote'];
     if (blockContents.length) {
       var self = this;
+
+      var nextContents = blockContents.slice(1);
+      blockContents = this.processBlock(blockContents[0], nextContents).concat(nextContents);
+
       blockContents.forEach(function (bc) {
-        var processed = self.processInline(bc);
-        if (processed.length) {
-          contents.push(['p'].concat(processed));
+        if (typeof bc === "string" || bc instanceof String) {
+          var processed = self.processInline(String(bc));
+          if (processed.length) {
+            contents.push(['p'].concat(processed));
+          }
+        } else {
+          contents.push(bc);
         }
       });
     }
 
-    return ['p', ['aside', params,
-                   ['div', {'class': 'title'},
-                     ['div', {'class': 'quote-controls'}],
-                     avatarImg ? avatarImg : "",
-                     I18n.t('user.said', {username: username})
-                   ],
-                   contents
-                ]];
-  }
-});
-
-Discourse.Dialect.on("parseNode", function(event) {
-  var node = event.node,
-      path = event.path;
-
-  // Make sure any quotes are followed by a <br>. The formatting looks weird otherwise.
-  if (node[0] === 'aside' && node[1] && node[1]['class'] === 'quote') {
-    var parent = path[path.length - 1],
-        location = parent.indexOf(node)+1,
-        trailing = parent.slice(location);
-
-    if (trailing.length) {
-      parent.splice(location, 0, ['br']);
+    // If there's no username just return a simple quote
+    if (!username) {
+      return ['p', ['aside', params, contents]];
     }
-  }
 
+    return ['aside', params,
+               ['div', {'class': 'title'},
+                 ['div', {'class': 'quote-controls'}],
+                 avatarImg ? ['__RAW', avatarImg] : "",
+                 username ? I18n.t('user.said', {username: username}) : ""
+               ],
+               contents
+            ];
+  }
 });

@@ -12,6 +12,7 @@ class PostActionsController < ApplicationController
     args = {}
     args[:message] = params[:message] if params[:message].present?
     args[:take_action] = true if guardian.is_staff? and params[:take_action] == 'true'
+    args[:flag_topic] = true if params[:flag_topic] == 'true'
 
     post_action = PostAction.act(current_user, @post, @post_action_type_id, args)
 
@@ -34,7 +35,7 @@ class PostActionsController < ApplicationController
   end
 
   def destroy
-    post_action = current_user.post_actions.where(post_id: params[:id].to_i, post_action_type_id: @post_action_type_id, deleted_at: nil).first
+    post_action = current_user.post_actions.find_by(post_id: params[:id].to_i, post_action_type_id: @post_action_type_id, deleted_at: nil)
 
     raise Discourse::NotFound if post_action.blank?
 
@@ -63,7 +64,21 @@ class PostActionsController < ApplicationController
 
     def fetch_post_from_params
       params.require(:id)
-      finder = Post.where(id: params[:id])
+
+      flag_topic = params[:flag_topic]
+      flag_topic = flag_topic && (flag_topic == true || flag_topic == "true")
+
+      post_id = if flag_topic
+        begin
+          Topic.find(params[:id]).posts.first.id
+        rescue
+          raise Discourse::NotFound
+        end
+      else
+        params[:id]
+      end
+
+      finder = Post.where(id: post_id)
 
       # Include deleted posts if the user is a moderator (to guardian ?)
       finder = finder.with_deleted if current_user.try(:moderator?)

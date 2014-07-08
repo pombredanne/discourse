@@ -1,7 +1,7 @@
 module Jobs
   # various consistency checks
   class EnsureDbConsistency < Jobs::Scheduled
-    recurrence { daily.hour_of_day(2) }
+    every 12.hours
 
     def execute(args)
       TopicUser.ensure_consistency!
@@ -9,6 +9,7 @@ module Jobs
       Group.refresh_automatic_groups!
       Notification.ensure_consistency!
       UserAction.ensure_consistency!
+      UserBadge.ensure_consistency!
     end
   end
 end

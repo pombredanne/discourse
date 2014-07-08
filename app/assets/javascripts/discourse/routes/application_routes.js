@@ -7,60 +7,92 @@
 Discourse.Route.buildRoutes(function() {
   var router = this;
 
+  // Generate static page routes
+  // e.g., faq, tos, privacy, login
+  _.each(Discourse.StaticController.PAGES, function (page) {
+    router.route(page, { path: '/' + page });
+  });
+
+  // Error page
+  this.route('exception', { path: '/exception' });
+
   // Topic routes
   this.resource('topic', { path: '/t/:slug/:id' }, function() {
     this.route('fromParams', { path: '/' });
     this.route('fromParamsNear', { path: '/:nearPost' });
   });
 
-  // Generate static page routes
-  Discourse.StaticController.pages.forEach(function(p) {
-    router.route(p, { path: "/" + p });
-  });
-
-  // List routes
-  this.resource('list', { path: '/' }, function() {
+  this.resource('discovery', { path: '/' }, function() {
     router = this;
 
-    // Generate routes for all our filters
-    Discourse.ListController.filters.forEach(function(filter) {
-      router.route(filter, { path: "/" + filter });
-      router.route(filter, { path: "/" + filter + "/more" });
+    // top
+    this.route('top');
+    this.route('topCategory', { path: '/category/:slug/l/top' });
+    this.route('topCategoryNone', { path: '/category/:slug/none/l/top' });
+    this.route('topCategory', { path: '/category/:parentSlug/:slug/l/top' });
+
+    // top by periods
+    Discourse.Site.currentProp('periods').forEach(function(period) {
+      var top = 'top' + period.capitalize();
+      router.route(top, { path: '/top/' + period });
+      router.route(top + 'Category', { path: '/category/:slug/l/top/' + period });
+      router.route(top + 'CategoryNone', { path: '/category/:slug/none/l/top/' + period });
+      router.route(top + 'Category', { path: '/category/:parentSlug/:slug/l/top/' + period });
     });
 
-    // the homepage is the first item of the 'top_menu' site setting
-    var settings = Discourse.SiteSettings || PreloadStore.get('siteSettings');
-    var homepage = settings.top_menu.split("|")[0].split(",")[0];
-    this.route(homepage, { path: '/' });
+    // filters
+    Discourse.Site.currentProp('filters').forEach(function(filter) {
+      router.route(filter, { path: '/' + filter });
+      router.route(filter + 'Category', { path: '/category/:slug/l/' + filter });
+      router.route(filter + 'CategoryNone', { path: '/category/:slug/none/l/' + filter });
+      router.route(filter + 'Category', { path: '/category/:parentSlug/:slug/l/' + filter });
+    });
 
-    this.route('categories', { path: '/categories' });
-    this.route('category', { path: '/category/:slug/more' });
-    this.route('category', { path: '/category/:slug' });
+    this.route('categories');
+
+    // default filter for a category
+    this.route('parentCategory', { path: '/category/:slug' });
+    this.route('categoryNone', { path: '/category/:slug/none' });
+    this.route('category', { path: '/category/:parentSlug/:slug' });
+
+    // homepage
+    this.route(Discourse.Utilities.defaultHomepage(), { path: '/' });
+  });
+
+  this.resource('group', { path: '/groups/:name' }, function() {
+    this.route('members');
   });
 
   // User routes
   this.resource('user', { path: '/users/:username' }, function() {
-    this.route('index', { path: '/'} );
-
     this.resource('userActivity', { path: '/activity' }, function() {
-      var resource = this;
-      Object.keys(Discourse.UserAction.TYPES).forEach(function (userAction) {
-        resource.route(userAction, { path: userAction.replace("_", "-") });
+      router = this;
+      _.map(Discourse.UserAction.TYPES, function (id, userAction) {
+        router.route(userAction, { path: userAction.replace('_', '-') });
       });
     });
 
+    this.route('badges');
+
     this.resource('userPrivateMessages', { path: '/private-messages' }, function() {
-      this.route('mine', {path: '/mine'});
-      this.route('unread', {path: '/unread'});
+      this.route('mine');
+      this.route('unread');
     });
 
-    this.resource('preferences', { path: '/preferences' }, function() {
-      this.route('username', { path: '/username' });
-      this.route('email', { path: '/email' });
+    this.resource('preferences', function() {
+      this.route('username');
+      this.route('email');
       this.route('about', { path: '/about-me' });
-      this.route('avatar', { path: '/avatar' });
+      this.route('badgeTitle', { path: '/badge_title' });
     });
 
-    this.route('invited', { path: 'invited' });
+    this.route('invited');
+  });
+
+  this.route('signup', {path: '/signup'});
+  this.route('login', {path: '/login'});
+
+  this.resource('badges', function() {
+    this.route('show', {path: '/:id/:slug'});
   });
 });

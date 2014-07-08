@@ -77,7 +77,11 @@ class SqlBuilder
     16 => :value_to_boolean
   }
 
-  def map_exec(klass, args = {})
+  def self.map_exec(klass, sql, args = {})
+    self.new(sql).map_exec(klass, args)
+  end
+
+  def map_exec(klass = OpenStruct, args = {})
     results = exec(args)
 
     setters = results.fields.each_with_index.map do |f, index|

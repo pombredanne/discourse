@@ -1,33 +1,51 @@
 # Post processing that we can do after a post has already been cooked.
 # For example, inserting the onebox content, or image sizes/thumbnails.
 
-require_dependency 'oneboxer'
+require_dependency 'url_helper'
 
 class CookedPostProcessor
   include ActionView::Helpers::NumberHelper
+  include UrlHelper
 
   def initialize(post, opts={})
     @dirty = false
     @opts = opts
     @post = post
+    @previous_cooked = (@post.cooked || "").dup
     @doc = Nokogiri::HTML::fragment(post.cooked)
     @size_cache = {}
-    @has_been_uploaded_cache = {}
   end
 
-  def post_process
-    post_process_attachments
+  def post_process(bypass_bump = false)
+    keep_reverse_index_up_to_date
     post_process_images
     post_process_oneboxes
+    optimize_urls
+    pull_hotlinked_images(bypass_bump)
   end
 
-  def post_process_attachments
-    attachments.each do |attachment|
-      href = attachment['href']
-      attachment['href'] = relative_to_absolute(href)
-      # update reverse index
+  def keep_reverse_index_up_to_date
+    upload_ids = Set.new
+
+    @doc.search("a").each do |a|
+      href = a["href"].to_s
       if upload = Upload.get_from_url(href)
-        associate_to_post(upload)
+        upload_ids << upload.id
+      end
+    end
+
+    @doc.search("img").each do |img|
+      src = img["src"].to_s
+      if upload = Upload.get_from_url(src)
+        upload_ids << upload.id
+      end
+    end
+
+    values = upload_ids.map{ |u| "(#{@post.id},#{u})" }.join(",")
+    PostUpload.transaction do
+      PostUpload.delete_all(post_id: @post.id)
+      if upload_ids.length > 0
+        PostUpload.exec_sql("INSERT INTO post_uploads (post_id, upload_id) VALUES #{values}")
       end
     end
   end
@@ -37,78 +55,63 @@ class CookedPostProcessor
     return if images.blank?
 
     images.each do |img|
-      if img['src'].present?
-        # keep track of the original src
-        src = img['src']
-        # make sure the src is absolute (when working with locally uploaded files)
-        img['src'] = relative_to_absolute(src)
-        # make sure the img has proper width and height attributes
-        update_dimensions!(img)
-        # retrieve the associated upload, if any
-        if upload = Upload.get_from_url(src)
-          # update reverse index
-          associate_to_post(upload)
-        end
-        # lightbox treatment
-        convert_to_link!(img, upload)
-        # mark the post as dirty whenever the src has changed
-        @dirty |= src != img['src']
-      end
+      src, width, height = img["src"], img["width"], img["height"]
+      limit_size!(img)
+      convert_to_link!(img)
     end
 
-    # Extract the first image from the first post and use it as the 'topic image'
-    extract_topic_image(images)
-  end
-
-  def post_process_oneboxes
-    args = { post_id: @post.id }
-    args[:invalidate_oneboxes] = true if @opts[:invalidate_oneboxes]
-    # bake onebox content into the post
-    result = Oneboxer.apply(@doc) do |url, element|
-      Oneboxer.onebox(url, args)
-    end
-    # mark the post as dirty whenever a onebox as been baked
-    @dirty |= result.changed?
+    update_topic_image(images)
   end
 
   def extract_images
-    # do not extract images inside a onebox or a quote
-    @doc.css("img") - @doc.css(".onebox-result img") - @doc.css(".quote img")
+    # do not extract images inside oneboxes or quotes
+    @doc.css("img") - @doc.css(".onebox-result img, .onebox img") - @doc.css(".quote img")
   end
 
-  def relative_to_absolute(src)
-    if src =~ /^\/[^\/]/
-      Discourse.base_url_no_prefix + src
-    else
-      src
+  def limit_size!(img)
+    # retrieve the size from
+    #  1) the width/height attributes
+    #  2) the dimension from the preview (image_sizes)
+    #  3) the dimension of the original image (HTTP request)
+    w, h = get_size_from_attributes(img) ||
+           get_size_from_image_sizes(img["src"], @opts[:image_sizes]) ||
+           get_size(img["src"])
+    # limit the size of the thumbnail
+    img["width"], img["height"] = ImageSizer.resize(w, h)
+  end
+
+  def get_size_from_attributes(img)
+    w, h = img["width"].to_i, img["height"].to_i
+    return [w, h] if w > 0 && h > 0
+  end
+
+  def get_size_from_image_sizes(src, image_sizes)
+    return unless image_sizes.present?
+    image_sizes.each do |image_size|
+      url, size = image_size[0], image_size[1]
+      return [size["width"], size["height"]] if url.include?(src)
     end
   end
 
-  def update_dimensions!(img)
-    w, h = get_size_from_image_sizes(img['src'], @opts[:image_sizes]) || get_size(img['src'])
-    # make sure we limit the size of the thumbnail
-    w, h = ImageSizer.resize(w, h)
-    # check whether the dimensions have changed
-    @dirty = (img['width'].to_i != w) || (img['height'].to_i != h)
-    # update the dimensions
-    img['width'] = w
-    img['height'] = h
+  def get_size(url)
+    absolute_url = url
+    absolute_url = Discourse.base_url_no_prefix + absolute_url if absolute_url =~ /^\/[^\/]/
+    # FastImage fails when there's no scheme
+    absolute_url = SiteSetting.scheme + ":" + absolute_url if absolute_url.start_with?("//")
+    return unless is_valid_image_url?(absolute_url)
+    # we can *always* crawl our own images
+    return unless SiteSetting.crawl_images? || Discourse.store.has_been_uploaded?(url)
+    @size_cache[url] ||= FastImage.size(absolute_url)
+  rescue Zlib::BufError # FastImage.size raises BufError for some gifs
   end
 
-  def associate_to_post(upload)
-    return if PostUpload.where(post_id: @post.id, upload_id: upload.id).count > 0
-    PostUpload.create(post_id: @post.id, upload_id: upload.id)
-  rescue ActiveRecord::RecordNotUnique
-    # do not care if it's already associated
+  def is_valid_image_url?(url)
+    uri = URI.parse(url)
+    %w(http https).include? uri.scheme
+  rescue URI::InvalidURIError
   end
 
-  def optimize_image!(img)
-    # TODO
-    # 1) optimize using image_optim
-    # 2) .png vs. .jpg (> 1.5x)
-  end
-
-  def convert_to_link!(img, upload=nil)
+  def convert_to_link!(img)
     src = img["src"]
     return unless src.present?
 
@@ -118,55 +121,54 @@ class CookedPostProcessor
     return if original_width.to_i <= width && original_height.to_i <= height
     return if original_width.to_i <= SiteSetting.max_image_width && original_height.to_i <= SiteSetting.max_image_height
 
-    return if is_a_hyperlink(img)
+    return if is_a_hyperlink?(img)
 
-    if upload
-      # create a thumbnail
+    if upload = Upload.get_from_url(src)
       upload.create_thumbnail!(width, height)
-      # optimize image
       # TODO: optimize_image!(img)
     end
 
     add_lightbox!(img, original_width, original_height, upload)
-
-    @dirty = true
   end
 
-  def is_a_hyperlink(img)
+  def is_a_hyperlink?(img)
     parent = img.parent
     while parent
-      return if parent.name == "a"
+      return true if parent.name == "a"
       break unless parent.respond_to? :parent
       parent = parent.parent
     end
+    false
   end
 
   def add_lightbox!(img, original_width, original_height, upload=nil)
     # first, create a div to hold our lightbox
     lightbox = Nokogiri::XML::Node.new("div", @doc)
+    lightbox["class"] = "lightbox-wrapper"
     img.add_next_sibling(lightbox)
     lightbox.add_child(img)
 
     # then, the link to our larger image
     a = Nokogiri::XML::Node.new("a", @doc)
     img.add_next_sibling(a)
-    a["href"] = img['src']
+    a["href"] = img["src"]
     a["class"] = "lightbox"
     a.add_child(img)
 
     # replace the image by its thumbnail
-    w = img["width"]
-    h = img["height"]
-    img['src'] = relative_to_absolute(upload.thumbnail(w, h).url) if upload && upload.has_thumbnail?(w, h)
+    w, h = img["width"].to_i, img["height"].to_i
+    img["src"] = upload.thumbnail(w, h).url if upload && upload.has_thumbnail?(w, h)
 
     # then, some overlay informations
     meta = Nokogiri::XML::Node.new("div", @doc)
     meta["class"] = "meta"
     img.add_next_sibling(meta)
 
-    filename = get_filename(upload, img['src'])
+    filename = get_filename(upload, img["src"])
     informations = "#{original_width}x#{original_height}"
     informations << " #{number_to_human_size(upload.filesize)}" if upload
+
+    a["title"] = filename
 
     meta.add_child create_span_node("filename", filename)
     meta.add_child create_span_node("informations", informations)
@@ -176,52 +178,76 @@ class CookedPostProcessor
   def get_filename(upload, src)
     return File.basename(src) unless upload
     return upload.original_filename unless upload.original_filename =~ /^blob(\.png)?$/i
-    return I18n.t('upload.pasted_image_filename')
+    return I18n.t("upload.pasted_image_filename")
   end
 
   def create_span_node(klass, content=nil)
     span = Nokogiri::XML::Node.new("span", @doc)
     span.content = content if content
-    span['class'] = klass
+    span["class"] = klass
     span
   end
 
-  def extract_topic_image(images)
+  def update_topic_image(images)
     if @post.post_number == 1
       img = images.first
-      @post.topic.update_column :image_url, img['src'] if img['src'].present?
+      @post.topic.update_column(:image_url, img["src"]) if img["src"].present?
     end
   end
 
-  def get_size_from_image_sizes(src, image_sizes)
-    [image_sizes[src]["width"], image_sizes[src]["height"]] if image_sizes.present? && image_sizes[src].present?
+  def post_process_oneboxes
+    args = {
+      post_id: @post.id,
+      invalidate_oneboxes: !!@opts[:invalidate_oneboxes],
+    }
+
+    result = Oneboxer.apply(@doc) do |url, element|
+      Oneboxer.onebox(url, args)
+    end
   end
 
-  def get_size(url)
-    uri = url
-    # make sure urls have a scheme (otherwise, FastImage will fail)
-    uri = (SiteSetting.use_ssl? ? "https:" : "http:") + url if url && url.start_with?("//")
-    return unless is_valid_image_uri?(uri)
-    # we can *always* crawl our own images
-    return unless SiteSetting.crawl_images? || Discourse.store.has_been_uploaded?(url)
-    @size_cache[url] ||= FastImage.size(uri)
-  rescue Zlib::BufError # FastImage.size raises BufError for some gifs
+  def optimize_urls
+    @doc.search("a").each do |a|
+      href = a["href"].to_s
+      a["href"] = schemaless absolute(href) if is_local(href)
+    end
+
+    @doc.search("img").each do |img|
+      src = img["src"].to_s
+      img["src"] = schemaless absolute(src) if is_local(src)
+    end
   end
 
-  def is_valid_image_uri?(url)
-    uri = URI.parse(url)
-    %w(http https).include? uri.scheme
-  rescue URI::InvalidURIError
+
+  def pull_hotlinked_images(bypass_bump = false)
+    # is the job enabled?
+    return unless SiteSetting.download_remote_images_to_local?
+    # have we enough disk space?
+    return if disable_if_low_on_disk_space
+    # we only want to run the job whenever it's changed by a user
+    return if @post.last_editor_id == Discourse.system_user.id
+    # make sure no other job is scheduled
+    Jobs.cancel_scheduled_job(:pull_hotlinked_images, post_id: @post.id)
+    # schedule the job
+    delay = SiteSetting.ninja_edit_window + 1
+    Jobs.enqueue_in(delay.seconds.to_i, :pull_hotlinked_images, post_id: @post.id, bypass_bump: bypass_bump)
   end
 
-  def attachments
-    attachments = @doc.css("a.attachment[href^=\"#{Discourse.store.absolute_base_url}\"]")
-    attachments += @doc.css("a.attachment[href^=\"#{Discourse.store.relative_base_url}\"]") if Discourse.store.internal?
-    attachments
+  def disable_if_low_on_disk_space
+    if available_disk_space < SiteSetting.download_remote_images_threshold
+      SiteSetting.download_remote_images_to_local = false
+      SystemMessage.create(Discourse.site_contact_user, :download_remote_images_disabled)
+      return true
+    end
+    false
+  end
+
+  def available_disk_space
+    100 - `df -l . | tail -1 | tr -s ' ' | cut -d ' ' -f 5`.to_i
   end
 
   def dirty?
-    @dirty
+    @previous_cooked != html
   end
 
   def html

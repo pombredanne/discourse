@@ -9,11 +9,14 @@
 
   <form>
     <label>{{i18n topic.split_topic.topic_name}}</label>
-    {{textField value=topicName placeholderKey="composer.title_placeholder"}}
+    {{text-field value=topicName placeholderKey="composer.title_placeholder" elementId='split-topic-name'}}
+
+    <label>{{i18n categories.category}}</label>
+    {{category-chooser value=categoryId}}
   </form>
 
 </div>
 
 <div class="modal-footer">
-  <button class='btn btn-primary' {{bindAttr disabled="buttonDisabled"}} {{action movePostsToNewTopic}}>{{buttonTitle}}</button>
+  <button class='btn btn-primary' {{bind-attr disabled="buttonDisabled"}} {{action movePostsToNewTopic}}>{{buttonTitle}}</button>
 </div>

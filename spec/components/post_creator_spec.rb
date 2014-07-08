@@ -44,6 +44,17 @@ describe PostCreator do
 
     end
 
+    context "invalid raw" do
+
+      let(:creator_invalid_raw) { PostCreator.new(user, basic_topic_params.merge(raw: '')) }
+
+      it "has errors" do
+        creator_invalid_raw.create
+        expect(creator_invalid_raw.errors).to be_present
+      end
+
+    end
+
     context "success" do
 
       it "doesn't return true for spam" do
@@ -79,14 +90,14 @@ describe PostCreator do
           reply = PostCreator.new(admin, raw: "this is my test reply 123 testing", topic_id: created_post.topic_id).create
         end
 
-        topic_id = created_post.topic_id
 
-
+        # 2 for topic, one to notify of new topic another for tracking state
         messages.map{|m| m.channel}.sort.should == [ "/new",
                                                      "/users/#{admin.username}",
                                                      "/users/#{admin.username}",
                                                      "/unread/#{admin.id}",
                                                      "/unread/#{admin.id}",
+                                                     "/topic/#{created_post.topic_id}",
                                                      "/topic/#{created_post.topic_id}"
                                                    ].sort
         admin_ids = [Group[:admins].id]
@@ -99,7 +110,6 @@ describe PostCreator do
         p = nil
         messages = MessageBus.track_publish do
           p = creator.create
-          topic_id = p.topic_id
         end
 
         latest = messages.find{|m| m.channel == "/new"}
@@ -111,7 +121,7 @@ describe PostCreator do
         user_action = messages.find{|m| m.channel == "/users/#{p.user.username}"}
         user_action.should_not be_nil
 
-        messages.length.should == 3
+        messages.length.should == 4
       end
 
       it 'extracts links from the post' do
@@ -122,11 +132,13 @@ describe PostCreator do
       it 'queues up post processing job when saved' do
         Jobs.expects(:enqueue).with(:feature_topic_users, has_key(:topic_id))
         Jobs.expects(:enqueue).with(:process_post, has_key(:post_id))
+        Jobs.expects(:enqueue).with(:notify_mailing_list_subscribers, has_key(:post_id))
         creator.create
       end
 
       it 'passes the invalidate_oneboxes along to the job if present' do
         Jobs.stubs(:enqueue).with(:feature_topic_users, has_key(:topic_id))
+        Jobs.expects(:enqueue).with(:notify_mailing_list_subscribers, has_key(:post_id))
         Jobs.expects(:enqueue).with(:process_post, has_key(:invalidate_oneboxes))
         creator.opts[:invalidate_oneboxes] = true
         creator.create
@@ -134,6 +146,7 @@ describe PostCreator do
 
       it 'passes the image_sizes along to the job if present' do
         Jobs.stubs(:enqueue).with(:feature_topic_users, has_key(:topic_id))
+        Jobs.expects(:enqueue).with(:notify_mailing_list_subscribers, has_key(:post_id))
         Jobs.expects(:enqueue).with(:process_post, has_key(:image_sizes))
         creator.opts[:image_sizes] = {'http://an.image.host/image.jpg' => {'width' => 17, 'height' => 31}}
         creator.create
@@ -156,7 +169,7 @@ describe PostCreator do
         first_post = creator.create
 
         # ensure topic user is correct
-        topic_user = first_post.user.topic_users.where(topic_id: first_post.topic_id).first
+        topic_user = first_post.user.topic_users.find_by(topic_id: first_post.topic_id)
         topic_user.should be_present
         topic_user.should be_posted
         topic_user.last_read_post_number.should == first_post.post_number
@@ -173,14 +186,23 @@ describe PostCreator do
 
         user2.user_stat.reload.topic_reply_count.should == 1
       end
+
+      it 'sets topic excerpt if first post, but not second post' do
+        first_post = creator.create
+        topic = first_post.topic.reload
+        topic.excerpt.should be_present
+        expect {
+          PostCreator.new(first_post.user, topic_id: first_post.topic_id, raw: "this is the second post").create
+          topic.reload
+        }.to_not change { topic.excerpt }
+      end
     end
 
     context 'when auto-close param is given' do
-      it 'ensures the user can auto-close the topic' do
+      it 'ensures the user can auto-close the topic, but ignores auto-close param silently' do
         Guardian.any_instance.stubs(:can_moderate?).returns(false)
-        expect {
-          PostCreator.new(user, basic_topic_params.merge(auto_close_days: 2)).create
-        }.to raise_error(Discourse::InvalidAccess)
+        post = PostCreator.new(user, basic_topic_params.merge(auto_close_time: 2)).create
+        post.topic.auto_close_at.should be_nil
       end
     end
   end
@@ -303,24 +325,28 @@ describe PostCreator do
       PostCreator.create(user, title: 'hi there welcome to my topic',
                                raw: "this is my awesome message @#{unrelated.username_lower}",
                                archetype: Archetype.private_message,
-                               target_usernames: [target_user1.username, target_user2.username].join(','))
+                               target_usernames: [target_user1.username, target_user2.username].join(','),
+                               category: 1)
     end
 
     it 'acts correctly' do
       post.topic.archetype.should == Archetype.private_message
       post.topic.topic_allowed_users.count.should == 3
 
+      # PMs can't have a category
+      post.topic.category.should be_nil
+
       # does not notify an unrelated user
       unrelated.notifications.count.should == 0
       post.topic.subtype.should == TopicSubtype.user_to_user
 
-      # if a mod replies they should be added to the allowed user list
-      mod = Fabricate(:moderator)
-      PostCreator.create(mod, raw: 'hi there welcome topic, I am a mod',
+      # if an admin replies they should be added to the allowed user list
+      admin = Fabricate(:admin)
+      PostCreator.create(admin, raw: 'hi there welcome topic, I am a mod',
                          topic_id: post.topic_id)
 
       post.topic.reload
-      post.topic.topic_allowed_users.where(user_id: mod.id).count.should == 1
+      post.topic.topic_allowed_users.where(user_id: admin.id).count.should == 1
     end
   end
 
@@ -380,9 +406,47 @@ describe PostCreator do
   context 'disable validations' do
     it 'can save a post' do
       creator = PostCreator.new(user, raw: 'q', title: 'q', skip_validations: true)
-      post = creator.create
+      creator.create
       creator.errors.should be_nil
     end
   end
+
+  describe "word_count" do
+    it "has a word count" do
+      creator = PostCreator.new(user, title: 'some inspired poetry for a rainy day', raw: 'mary had a little lamb, little lamb, little lamb. mary had a little lamb')
+      post = creator.create
+      post.word_count.should == 14
+
+      post.topic.reload
+      post.topic.word_count.should == 14
+    end
+  end
+
+  describe "embed_url" do
+
+    let(:embed_url) { "http://eviltrout.com/stupid-url" }
+
+    it "creates the topic_embed record" do
+      creator = PostCreator.new(user,
+                                embed_url: embed_url,
+                                title: 'Reviews of Science Ovens',
+                                raw: 'Did you know that you can use microwaves to cook your dinner? Science!')
+      creator.create
+      TopicEmbed.where(embed_url: embed_url).exists?.should be_true
+    end
+  end
+
+  describe "read credit for creator" do
+    it "should give credit to creator" do
+      post = create_post
+      PostTiming.find_by(topic_id: post.topic_id,
+                         post_number: post.post_number,
+                         user_id: post.user_id).msecs.should be > 0
+
+      TopicUser.find_by(topic_id: post.topic_id,
+                        user_id: post.user_id).last_read_post_number.should == 1
+    end
+  end
+
 end
 

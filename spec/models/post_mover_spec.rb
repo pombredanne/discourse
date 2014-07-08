@@ -6,7 +6,7 @@ describe PostMover do
     let(:user) { Fabricate(:user) }
     let(:another_user) { Fabricate(:evil_trout) }
     let(:category) { Fabricate(:category, user: user) }
-    let!(:topic) { Fabricate(:topic, user: user, category: category) }
+    let!(:topic) { Fabricate(:topic, user: user) }
     let!(:p1) { Fabricate(:post, topic: topic, user: user) }
     let!(:p2) { Fabricate(:post, topic: topic, user: another_user, raw: "Has a link to [evil trout](http://eviltrout.com) which is a cool site.")}
     let!(:p3) { Fabricate(:post, topic: topic, user: user)}
@@ -58,10 +58,10 @@ describe PostMover do
       end
 
       context "to a new topic" do
-        let!(:new_topic) { topic.move_posts(user, [p2.id, p4.id], title: "new testing topic name") }
+        let!(:new_topic) { topic.move_posts(user, [p2.id, p4.id], title: "new testing topic name", category_id: category.id) }
 
         it "works correctly" do
-          TopicUser.where(user_id: user.id, topic_id: topic.id).first.last_read_post_number.should == p3.post_number
+          TopicUser.find_by(user_id: user.id, topic_id: topic.id).last_read_post_number.should == p3.post_number
 
           new_topic.should be_present
           new_topic.featured_user1_id.should == another_user.id
@@ -69,7 +69,7 @@ describe PostMover do
 
           new_topic.category.should == category
           topic.featured_user1_id.should be_blank
-          new_topic.posts.should =~ [p2, p4]
+          new_topic.posts.by_post_number.should =~ [p2, p4]
 
           new_topic.reload
           new_topic.posts_count.should == 2
@@ -89,11 +89,11 @@ describe PostMover do
           topic.featured_user1_id.should be_blank
           topic.like_count.should == 0
           topic.posts_count.should == 2
-          topic.posts.should =~ [p1, p3]
+          topic.posts.by_post_number.should =~ [p1, p3]
           topic.highest_post_number.should == p3.post_number
 
           # both the like and was_liked user actions should be correct
-          action = UserAction.where(user_id: another_user.id).first
+          action = UserAction.find_by(user_id: another_user.id)
           action.target_topic_id.should == new_topic.id
         end
       end
@@ -102,7 +102,7 @@ describe PostMover do
 
         let!(:destination_topic) { Fabricate(:topic, user: user ) }
         let!(:destination_op) { Fabricate(:post, topic: destination_topic, user: user) }
-        let!(:moved_to) { topic.move_posts(user, [p2.id, p4.id], destination_topic_id: destination_topic.id )}
+        let!(:moved_to) { topic.move_posts(user, [p2.id, p4.id], destination_topic_id: destination_topic.id)}
 
         it "works correctly" do
           moved_to.should == destination_topic
@@ -113,7 +113,7 @@ describe PostMover do
           moved_to.highest_post_number.should == 3
           moved_to.featured_user1_id.should == another_user.id
           moved_to.like_count.should == 1
-          moved_to.category.should be_blank
+          moved_to.category_id.should == SiteSetting.uncategorized_category_id
 
           # Posts should be re-ordered
           p2.reload
@@ -133,11 +133,11 @@ describe PostMover do
           topic.featured_user1_id.should be_blank
           topic.like_count.should == 0
           topic.posts_count.should == 2
-          topic.posts.should =~ [p1, p3]
+          topic.posts.by_post_number.should =~ [p1, p3]
           topic.highest_post_number.should == p3.post_number
 
           # Should update last reads
-          TopicUser.where(user_id: user.id, topic_id: topic.id).first.last_read_post_number.should == p3.post_number
+          TopicUser.find_by(user_id: user.id, topic_id: topic.id).last_read_post_number.should == p3.post_number
         end
       end
 
@@ -148,7 +148,7 @@ describe PostMover do
         it "copies the OP, doesn't delete it" do
           new_topic.should be_present
           new_topic.posts.reload
-          new_topic.posts.first.raw.should == p1.raw
+          new_topic.posts.by_post_number.first.raw.should == p1.raw
 
           new_topic.reload
           new_topic.posts_count.should == 2
@@ -167,7 +167,7 @@ describe PostMover do
           p2.topic_id == new_topic.id
 
           topic.reload
-          topic.posts.should =~ [p1, p3, p4]
+          topic.posts.by_post_number.should =~ [p1, p3, p4]
           topic.highest_post_number.should == p4.post_number
         end
 

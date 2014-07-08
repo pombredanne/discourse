@@ -6,9 +6,9 @@
 // --------------------------------------------------
 
 html {
-  color: $black;
+  color: $primary;
   font: #{$base-font-size}/#{$base-line-height} $base-font-family;
-  background-color: $base-background-color;
+  background-color: $secondary;
   overflow-y: scroll;
   -webkit-font-smoothing: subpixel-antialiased;
 }
@@ -17,20 +17,17 @@ html {
 // --------------------------------------------------
 
 a {
-  color: $link-color;
+  color: $tertiary;
   text-decoration: none;
   cursor: pointer;
   &:visited {
-    color: $link-color-visited;
+    color: $tertiary;
   }
   &:hover {
-    color: $link-color-hover;
-  }
-  &:focus {
-    outline: 0;
+    color: $tertiary;
   }
   &:active {
-    color: $link-color-active;
+    color: $tertiary;
   }
 }
 
@@ -42,7 +39,7 @@ hr {
   height: 1px;
   margin: 1em 0;
   border: 0;
-  border-top: 1px solid $hr-border-color;
+  border-top: 1px solid scale-color-diff();
   padding: 0;
 }
 
@@ -54,6 +51,11 @@ ol,
 dd {
   margin: 0 0 9px 25px;
   padding: 0;
+}
+
+
+.cooked ul, .cooked ol, .cooked dd {
+  clear: both;
 }
 
 li {

@@ -30,7 +30,7 @@ describe Email::Styles do
     end
 
     it "adds a width and height to images with an emoji path" do
-      frag = basic_fragment("<img src='/assets/emoji/fish.png'>")
+      frag = basic_fragment("<img src='/plugins/emoji/fish.png' class='emoji'>")
       expect(frag.at("img")["width"]).to eq("20")
       expect(frag.at("img")["height"]).to eq("20")
     end
@@ -38,11 +38,6 @@ describe Email::Styles do
     it "converts relative paths to absolute paths" do
       frag = basic_fragment("<img src='/some-image.png'>")
       expect(frag.at("img")["src"]).to eq("#{Discourse.base_url}/some-image.png")
-    end
-
-    it "prefixes schemaless image urls with http:" do
-      frag = basic_fragment("<img src='//www.discourse.com/some-image.gif'>")
-      expect(frag.at("img")["src"]).to eq("http://www.discourse.com/some-image.gif")
     end
 
     it "strips classes and ids" do
@@ -84,13 +79,46 @@ describe Email::Styles do
       expect(frag.at('ul')['style']).to be_present
       expect(frag.at('li')['style']).to be_present
     end
+  end
 
-    it "removes pre tags but keeps their contents" do
-      style = Email::Styles.new("<pre>hello</pre>")
-      style.format_basic
-      style.format_html
-      expect(style.to_html).to eq("hello")
+  context "rewriting protocol relative URLs to the forum" do
+    it "doesn't rewrite a url to another site" do
+      frag = html_fragment('<a href="//youtube.com/discourse">hello</a>')
+      frag.at('a')['href'].should == "//youtube.com/discourse"
     end
+
+    context "without https" do
+      before do
+        SiteSetting.stubs(:use_https).returns(false)
+      end
+
+      it "rewrites the href to have http" do
+        frag = html_fragment('<a href="//test.localhost/discourse">hello</a>')
+        frag.at('a')['href'].should == "http://test.localhost/discourse"
+      end
+
+      it "rewrites the src to have http" do
+        frag = html_fragment('<img src="//test.localhost/blah.jpg">')
+        frag.at('img')['src'].should == "http://test.localhost/blah.jpg"
+      end
+    end
+
+    context "with https" do
+      before do
+        SiteSetting.stubs(:use_https).returns(true)
+      end
+
+      it "rewrites the forum URL to have http" do
+        frag = html_fragment('<a href="//test.localhost/discourse">hello</a>')
+        frag.at('a')['href'].should == "https://test.localhost/discourse"
+      end
+
+      it "rewrites the src to have https" do
+        frag = html_fragment('<img src="//test.localhost/blah.jpg">')
+        frag.at('img')['src'].should == "https://test.localhost/blah.jpg"
+      end
+    end
+
   end
 
 

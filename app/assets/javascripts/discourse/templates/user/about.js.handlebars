@@ -9,7 +9,7 @@
   {{#if error}}
     <div class="control-group">
       <div class="instructions">
-        <div class='alert error'>{{i18n user.change_about.error}}</div>
+        <div class='alert alert-error'>{{i18n user.change_about.error}}</div>
       </div>
     </div>
   {{/if}}
@@ -17,13 +17,13 @@
   <div class="control-group">
     <label class="control-label">{{i18n user.bio}}</label>
     <div class="controls">
-      {{pagedown value=bio_raw}}
+      {{pagedown-editor value=bio_raw}}
     </div>
   </div>
 
   <div class="control-group">
     <div class="controls">
-        <button {{action changeAbout}} {{bindAttr disabled="saveDisabled"}} class="btn btn-primary">{{saveButtonText}}</button>
+        <button {{action changeAbout}} {{bind-attr disabled="saveDisabled"}} class="btn btn-primary">{{saveButtonText}}</button>
         {{#if saved}}{{i18n saved}}{{/if}}
     </div>
   </div>

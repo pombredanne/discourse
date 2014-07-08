@@ -1,13 +1,13 @@
 class PostSerializer < BasicPostSerializer
 
   # To pass in additional information we might need
-  attr_accessor :topic_slug
-  attr_accessor :topic_view
-  attr_accessor :parent_post
-  attr_accessor :add_raw
-  attr_accessor :single_post_link_counts
-  attr_accessor :draft_sequence
-  attr_accessor :post_actions
+  attr_accessor :topic_slug,
+                :topic_view,
+                :parent_post,
+                :add_raw,
+                :single_post_link_counts,
+                :draft_sequence,
+                :post_actions
 
   attributes :post_number,
              :post_type,
@@ -23,6 +23,7 @@ class PostSerializer < BasicPostSerializer
              :topic_slug,
              :topic_id,
              :display_username,
+             :primary_group_name,
              :version,
              :can_edit,
              :can_delete,
@@ -35,6 +36,7 @@ class PostSerializer < BasicPostSerializer
              :raw,
              :actions_summary,
              :moderator?,
+             :admin?,
              :staff?,
              :user_id,
              :draft_sequence,
@@ -43,15 +45,22 @@ class PostSerializer < BasicPostSerializer
              :trust_level,
              :deleted_at,
              :deleted_by,
-             :user_deleted
-
+             :user_deleted,
+             :edit_reason,
+             :can_view_edit_history,
+             :wiki,
+             :user_custom_fields
 
   def moderator?
-    object.user.try(:moderator?) || false
+    !!(object.user && object.user.moderator?)
+  end
+
+  def admin?
+    !!(object.user && object.user.admin?)
   end
 
   def staff?
-    object.user.try(:staff?) || false
+    !!(object.user && object.user.staff?)
   end
 
   def yours
@@ -72,6 +81,16 @@ class PostSerializer < BasicPostSerializer
 
   def display_username
     object.user.try(:name)
+  end
+
+  def primary_group_name
+    return nil unless object.user && object.user.primary_group_id
+
+    if @topic_view
+      @topic_view.primary_group_names[object.user.primary_group_id]
+    else
+      object.user.primary_group.name if object.user.primary_group
+    end
   end
 
   def link_counts
@@ -97,10 +116,6 @@ class PostSerializer < BasicPostSerializer
     object.score || 0
   end
 
-  def version
-    object.cached_version
-  end
-
   def user_title
     object.user.try(:title)
   end
@@ -112,8 +127,8 @@ class PostSerializer < BasicPostSerializer
   def reply_to_user
     {
       username: object.reply_to_user.username,
-      name: object.reply_to_user.name,
-      avatar_template: object.reply_to_user.avatar_template
+      avatar_template: object.reply_to_user.avatar_template,
+      uploaded_avatar_id: object.reply_to_user.uploaded_avatar_id
     }
   end
 
@@ -173,7 +188,7 @@ class PostSerializer < BasicPostSerializer
   end
 
   def include_raw?
-    @add_raw.present?
+    @add_raw.present? && (!object.hidden || scope.user.try(:staff?) || yours)
   end
 
   def include_link_counts?
@@ -192,6 +207,24 @@ class PostSerializer < BasicPostSerializer
 
   def include_bookmarked?
     post_actions.present? && post_actions.keys.include?(PostActionType.types[:bookmark])
+  end
+
+  def include_display_username?
+    SiteSetting.enable_names?
+  end
+
+  def can_view_edit_history
+    scope.can_view_post_revisions?(object)
+  end
+
+  def user_custom_fields
+    @topic_view.user_custom_fields[object.user_id]
+  end
+
+  def include_user_custom_fields?
+    return if @topic_view.blank?
+    custom_fields = @topic_view.user_custom_fields
+    custom_fields && custom_fields[object.user_id]
   end
 
   private

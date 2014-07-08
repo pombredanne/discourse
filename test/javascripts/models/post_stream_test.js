@@ -11,6 +11,10 @@ var buildStream = function(id, stream) {
 
 var participant = {username: 'eviltrout'};
 
+test('create', function() {
+  ok(Discourse.PostStream.create(), 'it can be created with no parameters');
+});
+
 test('defaults', function() {
   var postStream = buildStream(1234);
   blank(postStream.get('posts'), "there are no posts in a stream by default");
@@ -25,17 +29,17 @@ test('appending posts', function() {
   equal(postStream.get('lastPostId'), 4, "the last post id is 4");
 
   ok(!postStream.get('hasPosts'), "there are no posts by default");
-  ok(!postStream.get('firstPostLoaded'), "the first post is not loaded");
-  ok(!postStream.get('lastPostLoaded'), "the last post is not loaded");
+  ok(!postStream.get('firstPostPresent'), "the first post is not loaded");
+  ok(!postStream.get('loadedAllPosts'), "the last post is not loaded");
   equal(postStream.get('posts.length'), 0, "it has no posts initially");
 
   postStream.appendPost(Discourse.Post.create({id: 2, post_number: 2}));
-  ok(!postStream.get('firstPostLoaded'), "the first post is still not loaded");
+  ok(!postStream.get('firstPostPresent'), "the first post is still not loaded");
   equal(postStream.get('posts.length'), 1, "it has one post in the stream");
 
   postStream.appendPost(Discourse.Post.create({id: 4, post_number: 4}));
-  ok(!postStream.get('firstPostLoaded'), "the first post is still loaded");
-  ok(postStream.get('lastPostLoaded'), "the last post is now loaded");
+  ok(!postStream.get('firstPostPresent'), "the first post is still loaded");
+  ok(postStream.get('loadedAllPosts'), "the last post is now loaded");
   equal(postStream.get('posts.length'), 2, "it has two posts in the stream");
 
   postStream.appendPost(Discourse.Post.create({id: 4, post_number: 4}));
@@ -50,8 +54,8 @@ test('appending posts', function() {
 
   // change the stream
   postStream.set('stream', [1, 2, 4]);
-  ok(!postStream.get('firstPostLoaded'), "the first post no longer loaded since the stream changed.");
-  ok(postStream.get('lastPostLoaded'), "the last post is still the last post in the new stream");
+  ok(!postStream.get('firstPostPresent'), "the first post no longer loaded since the stream changed.");
+  ok(postStream.get('loadedAllPosts'), "the last post is still the last post in the new stream");
 });
 
 test('closestPostNumberFor', function() {
@@ -109,9 +113,9 @@ test("cancelFilter", function() {
 
   this.stub(postStream, "refresh");
 
-  postStream.set('bestOf', true);
+  postStream.set('summary', true);
   postStream.cancelFilter();
-  ok(!postStream.get('bestOf'), "best of is cancelled");
+  ok(!postStream.get('summary'), "summary is cancelled");
 
   postStream.toggleParticipant(participant);
   postStream.cancelFilter();
@@ -137,17 +141,14 @@ test("streamFilters", function() {
 
   deepEqual(postStream.get('streamFilters'), {}, "there are no postFilters by default");
   ok(postStream.get('hasNoFilters'), "there are no filters by default");
-  blank(postStream.get("filterDesc"), "there is no description of the filter");
 
-  postStream.set('bestOf', true);
-  deepEqual(postStream.get('streamFilters'), {filter: "best_of"}, "postFilters contains the bestOf flag");
+  postStream.set('summary', true);
+  deepEqual(postStream.get('streamFilters'), {filter: "summary"}, "postFilters contains the summary flag");
   ok(!postStream.get('hasNoFilters'), "now there are filters present");
-  present(postStream.get("filterDesc"), "there is a description of the filter");
 
   postStream.toggleParticipant(participant.username);
   deepEqual(postStream.get('streamFilters'), {
-    filter: "best_of",
-    username_filters: ['eviltrout']
+    username_filters: 'eviltrout'
   }, "streamFilters contains the username we filtered");
 });
 
@@ -202,14 +203,16 @@ test("previousWindow", function() {
 });
 
 test("storePost", function() {
-  var postStream = buildStream(1234);
+  var postStream = buildStream(1234),
+      post = Discourse.Post.create({id: 1, post_number: 100, raw: 'initial value'});
 
-  var post = Discourse.Post.create({id: 1, post_number: 1, raw: 'initial value'});
+  blank(postStream.get('topic.highest_post_number'), "it has no highest post number yet");
   var stored = postStream.storePost(post);
   equal(post, stored, "it returns the post it stored");
   equal(post.get('topic'), postStream.get('topic'), "it creates the topic reference properly");
+  equal(postStream.get('topic.highest_post_number'), 100, "it set the highest post number");
 
-  var dupePost = Discourse.Post.create({id: 1, post_number: 1, raw: 'updated value'});
+  var dupePost = Discourse.Post.create({id: 1, post_number: 100, raw: 'updated value'});
   var storedDupe = postStream.storePost(dupePost);
   equal(storedDupe, post, "it returns the previously stored post instead to avoid dupes");
   equal(storedDupe.get('raw'), 'updated value', 'it updates the previously stored post');
@@ -224,7 +227,7 @@ test("storePost", function() {
 test("identity map", function() {
   var postStream = buildStream(1234);
   var p1 = postStream.appendPost(Discourse.Post.create({id: 1, post_number: 1}));
-  var p3 = postStream.appendPost(Discourse.Post.create({id: 3, post_number: 4}));
+  postStream.appendPost(Discourse.Post.create({id: 3, post_number: 4}));
 
   equal(postStream.findLoadedPost(1), p1, "it can return cached posts by id");
   blank(postStream.findLoadedPost(4), "it can't find uncached posts");
@@ -303,10 +306,9 @@ test("staging and undoing a new post", function() {
 
   equal(stagedPost.get('topic'), topic, "it assigns the topic reference");
   equal(stagedPost.get('post_number'), 2, "it is assigned the probable post_number");
-  equal(postStream.get('filteredPostsCount'), 1, "it retains the filteredPostsCount");
   present(stagedPost.get('created_at'), "it is assigned a created date");
   ok(postStream.get('posts').contains(stagedPost), "the post is added to the stream");
-  blank(stagedPost.get('id'), "the post has no id yet");
+  equal(stagedPost.get('id'), -1, "the post has a magical -1 id");
 
   // Undoing a created post (there was an error)
   postStream.undoPost(stagedPost);
@@ -333,7 +335,6 @@ test("staging and committing a post", function() {
 
   ok(postStream.get('loading'), "it is loading while the post is being staged");
   stagedPost.setProperties({ id: 1234, raw: "different raw value" });
-  equal(postStream.get('filteredPostsCount'), 1, "it retains the filteredPostsCount");
 
   result = postStream.stagePost(stagedPost, user);
   equal(result, false, "you can't stage a post while it is currently staging");
@@ -359,9 +360,9 @@ test('triggerNewPostInStream', function() {
   postStream.triggerNewPostInStream(null);
   ok(!postStream.appendMore.calledOnce, "asking for a null id does nothing");
 
-  postStream.toggleBestOf();
+  postStream.toggleSummary();
   postStream.triggerNewPostInStream(1);
-  ok(!postStream.appendMore.calledOnce, "it will not trigger when bestOf is active");
+  ok(!postStream.appendMore.calledOnce, "it will not trigger when summary is active");
 
   postStream.cancelFilter();
   postStream.toggleParticipant('eviltrout');
@@ -379,18 +380,18 @@ test('triggerNewPostInStream', function() {
 });
 
 
-test("lastPostLoaded when the id changes", function() {
+test("loadedAllPosts when the id changes", function() {
   // This can happen in a race condition between staging a post and it coming through on the
-  // message bus. If the id of a post changes we should reconsider the lastPostLoaded property.
+  // message bus. If the id of a post changes we should reconsider the loadedAllPosts property.
   var postStream = buildStream(10101, [1, 2]);
   var postWithoutId = Discourse.Post.create({ raw: 'hello world this is my new post' });
 
   postStream.appendPost(Discourse.Post.create({id: 1, post_number: 1}));
   postStream.appendPost(postWithoutId);
-  ok(!postStream.get('lastPostLoaded'), 'the last post is not loaded');
+  ok(!postStream.get('loadedAllPosts'), 'the last post is not loaded');
 
   postWithoutId.set('id', 2);
-  ok(postStream.get('lastPostLoaded'), 'the last post is loaded now that the post has an id');
+  ok(postStream.get('loadedAllPosts'), 'the last post is loaded now that the post has an id');
 });
 
 test("comitting and triggerNewPostInStream race condition", function() {
@@ -400,7 +401,7 @@ test("comitting and triggerNewPostInStream race condition", function() {
   var user = Discourse.User.create({username: 'eviltrout', name: 'eviltrout', id: 321});
   var stagedPost = Discourse.Post.create({ raw: 'hello world this is my new post' });
 
-  var result = postStream.stagePost(stagedPost, user);
+  postStream.stagePost(stagedPost, user);
   equal(postStream.get('filteredPostsCount'), 0, "it has no filteredPostsCount yet");
   stagedPost.set('id', 123);
 

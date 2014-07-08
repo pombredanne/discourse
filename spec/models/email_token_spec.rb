@@ -63,8 +63,8 @@ describe EmailToken do
     end
 
     it 'returns nil when a token is older than a specific time' do
-      EmailToken.expects(:valid_after).returns(1.week.ago)
-      email_token.update_column(:created_at, 2.weeks.ago)
+      SiteSetting.email_token_valid_hours = 10
+      email_token.update_column(:created_at, 11.hours.ago)
       EmailToken.confirm(email_token.token).should be_blank
     end
 
@@ -88,11 +88,10 @@ describe EmailToken do
       end
 
       context "when using the code a second time" do
-        before do
-          EmailToken.confirm(email_token.token)
-        end
 
         it "doesn't send the welcome message" do
+          SiteSetting.email_token_grace_period_hours = 1
+          EmailToken.confirm(email_token.token)
           user = EmailToken.confirm(email_token.token)
           user.send_welcome_message.should be_false
         end
@@ -116,6 +115,16 @@ describe EmailToken do
       it 'marks the token as confirmed' do
         email_token.reload
         email_token.should be_confirmed
+      end
+
+      it "can be confirmed again" do
+        EmailToken.stubs(:confirm_valid_after).returns(1.hour.ago)
+
+        EmailToken.confirm(email_token.token).should == user
+
+        # Unless `confirm_valid_after` has passed
+        EmailToken.stubs(:confirm_valid_after).returns(1.hour.from_now)
+        EmailToken.confirm(email_token.token).should be_blank
       end
 
     end

@@ -1,12 +1,12 @@
-require 'digest/sha1'
-require 'image_sizer'
-require 'tempfile'
-require 'pathname'
+require "digest/sha1"
+require_dependency "image_sizer"
+require_dependency "file_helper"
+require_dependency "validators/upload_validator"
 
 class Upload < ActiveRecord::Base
   belongs_to :user
 
-  has_many :post_uploads
+  has_many :post_uploads, dependent: :destroy
   has_many :posts, through: :post_uploads
 
   has_many :optimized_images, dependent: :destroy
@@ -14,19 +14,18 @@ class Upload < ActiveRecord::Base
   validates_presence_of :filesize
   validates_presence_of :original_filename
 
-  def thumbnail(width = nil, height = nil)
-    width ||= self.width
-    height ||= self.height
-    optimized_images.where(width: width, height: height).first
+  validates_with ::Validators::UploadValidator
+
+  def thumbnail(width = self.width, height = self.height)
+    optimized_images.find_by(width: width, height: height)
   end
 
-  def has_thumbnail?(width = nil, height = nil)
+  def has_thumbnail?(width, height)
     thumbnail(width, height).present?
   end
 
   def create_thumbnail!(width, height)
     return unless SiteSetting.create_thumbnails?
-    return if has_thumbnail?(width, height)
     thumbnail = OptimizedImage.create_for(self, width, height)
     if thumbnail
       optimized_images << thumbnail
@@ -47,44 +46,73 @@ class Upload < ActiveRecord::Base
     File.extname(original_filename)
   end
 
-  def self.create_for(user_id, file, filesize)
+  # options
+  #   - content_type
+  #   - origin
+  def self.create_for(user_id, file, filename, filesize, options = {})
     # compute the sha
-    sha1 = Digest::SHA1.file(file.tempfile).hexdigest
+    sha1 = Digest::SHA1.file(file).hexdigest
     # check if the file has already been uploaded
-    unless upload = Upload.where(sha1: sha1).first
-      # deal with width & heights for images
-      if SiteSetting.authorized_image?(file)
-        # retrieve image info
-        image_info = FastImage.new(file.tempfile, raise_on_failure: true)
-        # compute image aspect ratio
-        width, height = ImageSizer.resize(*image_info.size)
-        # make sure we're at the beginning of the file (FastImage is moving the pointer)
-        file.rewind
-      end
-      # create a db record (so we can use the id)
-      upload = Upload.create!(
+    upload = Upload.find_by(sha1: sha1)
+    # delete the previously uploaded file if there's been an error
+    if upload && upload.url.blank?
+      upload.destroy
+      upload = nil
+    end
+    # create the upload
+    unless upload
+      # initialize a new upload
+      upload = Upload.new(
         user_id: user_id,
-        original_filename: file.original_filename,
+        original_filename: filename,
         filesize: filesize,
         sha1: sha1,
-        url: "",
-        width: width,
-        height: height,
+        url: ""
       )
+      # trim the origin if any
+      upload.origin = options[:origin][0...1000] if options[:origin]
+
+      # deal with width & height for images
+      if FileHelper.is_image?(filename)
+        begin
+          # retrieve image info
+          image_info = FastImage.new(file, raise_on_failure: true)
+            # compute image aspect ratio
+          upload.width, upload.height = ImageSizer.resize(*image_info.size)
+          # make sure we're at the beginning of the file (FastImage moves the pointer)
+          file.rewind
+        rescue FastImage::ImageFetchFailure
+          upload.errors.add(:base, I18n.t("upload.images.fetch_failure"))
+        rescue FastImage::UnknownImageType
+          upload.errors.add(:base, I18n.t("upload.images.unknown_image_type"))
+        rescue FastImage::SizeNotFound
+          upload.errors.add(:base, I18n.t("upload.images.size_not_found"))
+        end
+
+        return upload unless upload.errors.empty?
+      end
+
+      # create a db record (so we can use the id)
+      return upload unless upload.save
+
       # store the file and update its url
-      upload.url = Discourse.store.store_upload(file, upload)
-      # save the url
-      upload.save
+      url = Discourse.store.store_upload(file, upload, options[:content_type])
+      if url.present?
+        upload.url = url
+        upload.save
+      else
+        upload.errors.add(:url, I18n.t("upload.store_failure", { upload_id: upload.id, user_id: user_id }))
+      end
     end
+
     # return the uploaded file
     upload
   end
 
   def self.get_from_url(url)
     # we store relative urls, so we need to remove any host/cdn
-    asset_host = Rails.configuration.action_controller.asset_host
-    url = url.gsub(/^#{asset_host}/i, "") if asset_host.present?
-    Upload.where(url: url).first if Discourse.store.has_been_uploaded?(url)
+    url = url.gsub(/^#{Discourse.asset_host}/i, "") if Discourse.asset_host.present?
+    Upload.find_by(url: url) if Discourse.store.has_been_uploaded?(url)
   end
 
 end
@@ -100,9 +128,10 @@ end
 #  width             :integer
 #  height            :integer
 #  url               :string(255)      not null
-#  created_at        :datetime         not null
-#  updated_at        :datetime         not null
+#  created_at        :datetime
+#  updated_at        :datetime
 #  sha1              :string(40)
+#  origin            :string(1000)
 #
 # Indexes
 #
@@ -111,4 +140,3 @@ end
 #  index_uploads_on_url         (url)
 #  index_uploads_on_user_id     (user_id)
 #
-

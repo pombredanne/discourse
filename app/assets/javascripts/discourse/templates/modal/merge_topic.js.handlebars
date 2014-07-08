@@ -7,9 +7,11 @@
 
   <p>{{{i18n topic.merge_topic.instructions count="selectedPostsCount"}}}</p>
 
-  {{chooseTopic selectedTopicId=selectedTopicId}}
+  <form>
+    {{choose-topic selectedTopicId=selectedTopicId}}
+  </form>
 </div>
 
 <div class="modal-footer">
-  <button class='btn btn-primary' {{bindAttr disabled="buttonDisabled"}} {{action movePostsToExistingTopic}}>{{buttonTitle}}</button>
+  <button class='btn btn-primary' {{bind-attr disabled="buttonDisabled"}} {{action movePostsToExistingTopic}}>{{buttonTitle}}</button>
 </div>

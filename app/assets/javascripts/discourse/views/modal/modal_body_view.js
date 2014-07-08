@@ -8,21 +8,21 @@
 **/
 Discourse.ModalBodyView = Discourse.View.extend({
 
-  // Focus on first element
-  didInsertElement: function() {
-    $('#discourse-modal').modal('show');
+  _setupModal: function() {
+    var self = this,
+        $discourseModal = $('#discourse-modal');
 
-    var controller = this.get('controller');
-    $('#discourse-modal').on('hide.discourse', function() {
-      controller.send('closeModal');
+    $discourseModal.modal('show');
+    $discourseModal.one("hide", function () {
+      self.get("controller").send("closeModal");
     });
 
     $('#modal-alert').hide();
 
+    // Focus on first element
     if (!Discourse.Mobile.mobileView) {
-      var modalBodyView = this;
       Em.run.schedule('afterRender', function() {
-        modalBodyView.$('input:first').focus();
+        self.$('input:first').focus();
       });
     }
 
@@ -30,17 +30,7 @@ Discourse.ModalBodyView = Discourse.View.extend({
     if (title) {
       this.set('controller.controllers.modal.title', title);
     }
-  },
-
-  willDestroyElement: function() {
-    $('#discourse-modal').off('hide.discourse');
-  },
-
-  // Pass the errors to our errors view
-  displayErrors: function(errors, callback) {
-    this.set('parentView.parentView.modalErrorsView.errors', errors);
-    if (typeof callback === "function") callback();
-  },
+  }.on('didInsertElement'),
 
   flashMessageChanged: function() {
     var flashMessage = this.get('controller.flashMessage');

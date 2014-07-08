@@ -35,13 +35,38 @@ describe InvitesController do
 
     end
 
+  end
+
+  context '.create' do
+    it 'requires you to be logged in' do
+      lambda {
+        post :create, email: 'jake@adventuretime.ooo'
+      }.should raise_error(Discourse::NotLoggedIn)
+    end
+
+    context 'while logged in' do
+      let(:email) { 'jake@adventuretime.ooo' }
+
+      it "fails if you can't invite to the forum" do
+        log_in
+        post :create, email: email
+        response.should_not be_success
+      end
+
+      it "allows admins to invite to groups" do
+        group = Fabricate(:group)
+        log_in(:admin)
+        post :create, email: email, group_names: group.name
+        response.should be_success
+        Invite.find_by(email: email).invited_groups.count.should == 1
+      end
+    end
 
   end
 
   context '.show' do
 
     context 'with an invalid invite id' do
-
       before do
         get :show, id: "doesn't exist"
       end
@@ -53,7 +78,6 @@ describe InvitesController do
       it "should not change the session" do
         session[:current_user_id].should be_blank
       end
-
     end
 
     context 'with a deleted invite' do
@@ -71,9 +95,7 @@ describe InvitesController do
       it "should not change the session" do
         session[:current_user_id].should be_blank
       end
-
     end
-
 
     context 'with a valid invite id' do
       let(:topic) { Fabricate(:topic) }
@@ -126,6 +148,65 @@ describe InvitesController do
 
     end
 
+  end
+
+  context '.check_csv_chunk' do
+    it 'requires you to be logged in' do
+      lambda {
+        post :check_csv_chunk
+      }.should raise_error(Discourse::NotLoggedIn)
+    end
+
+    context 'while logged in' do
+      let(:resumableChunkNumber) { 1 }
+      let(:resumableCurrentChunkSize) { 46 }
+      let(:resumableIdentifier) { '46-discoursecsv' }
+      let(:resumableFilename) { 'discourse.csv' }
+
+      it "fails if you can't bulk invite to the forum" do
+        log_in
+        post :check_csv_chunk, resumableChunkNumber: resumableChunkNumber, resumableCurrentChunkSize: resumableCurrentChunkSize.to_i, resumableIdentifier: resumableIdentifier, resumableFilename: resumableFilename
+        response.should_not be_success
+      end
+
+    end
+
+  end
+
+  context '.upload_csv_chunk' do
+    it 'requires you to be logged in' do
+      lambda {
+        post :upload_csv_chunk
+      }.should raise_error(Discourse::NotLoggedIn)
+    end
+
+    context 'while logged in' do
+      let(:csv_file) { File.new("#{Rails.root}/spec/fixtures/csv/discourse.csv") }
+      let(:file) do
+        ActionDispatch::Http::UploadedFile.new({ filename: 'discourse.csv', tempfile: csv_file })
+      end
+      let(:resumableChunkNumber) { 1 }
+      let(:resumableChunkSize) { 1048576 }
+      let(:resumableCurrentChunkSize) { 46 }
+      let(:resumableTotalSize) { 46 }
+      let(:resumableType) { 'text/csv' }
+      let(:resumableIdentifier) { '46-discoursecsv' }
+      let(:resumableFilename) { 'discourse.csv' }
+      let(:resumableRelativePath) { 'discourse.csv' }
+
+      it "fails if you can't bulk invite to the forum" do
+        log_in
+        post :upload_csv_chunk, file: file, resumableChunkNumber: resumableChunkNumber.to_i, resumableChunkSize: resumableChunkSize.to_i, resumableCurrentChunkSize: resumableCurrentChunkSize.to_i, resumableTotalSize: resumableTotalSize.to_i, resumableType: resumableType, resumableIdentifier: resumableIdentifier, resumableFilename: resumableFilename
+        response.should_not be_success
+      end
+
+      it "allows admins to bulk invite" do
+        log_in(:admin)
+        post :upload_csv_chunk, file: file, resumableChunkNumber: resumableChunkNumber.to_i, resumableChunkSize: resumableChunkSize.to_i, resumableCurrentChunkSize: resumableCurrentChunkSize.to_i, resumableTotalSize: resumableTotalSize.to_i, resumableType: resumableType, resumableIdentifier: resumableIdentifier, resumableFilename: resumableFilename
+        response.should be_success
+      end
+
+    end
 
   end
 

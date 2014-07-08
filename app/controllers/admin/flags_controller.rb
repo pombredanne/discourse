@@ -4,7 +4,7 @@ class Admin::FlagsController < Admin::AdminController
   def index
     # we may get out of sync, fix it here
     PostAction.update_flagged_posts_count
-    posts, users = FlagQuery.flagged_posts_report(params[:filter], params[:offset].to_i, 10)
+    posts, users = FlagQuery.flagged_posts_report(current_user, params[:filter], params[:offset].to_i, 10)
 
     if posts.blank?
       render json: {users: [], posts: []}
@@ -23,8 +23,9 @@ class Admin::FlagsController < Admin::AdminController
 
   def agree
     p = Post.find(params[:id])
+    post_action_type = PostAction.post_action_type_for_post(p.id)
     PostAction.defer_flags!(p, current_user.id)
-    PostAction.hide_post!(p)
+    PostAction.hide_post!(p, post_action_type)
     render nothing: true
   end
 
@@ -33,4 +34,5 @@ class Admin::FlagsController < Admin::AdminController
     PostAction.defer_flags!(p, current_user.id)
     render nothing: true
   end
+
 end

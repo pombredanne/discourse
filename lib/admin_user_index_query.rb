@@ -29,14 +29,26 @@ class AdminUserIndexQuery
       when 'admins' then @query.where('admin = ?', true)
       when 'moderators' then @query.where('moderator = ?', true)
       when 'blocked' then @query.blocked
-      when 'banned' then @query.banned
-      when 'pending' then @query.not_banned.where('approved = false')
+      when 'suspended' then @query.suspended
+      when 'pending' then @query.not_suspended.where('approved = false')
     end
   end
 
   def filter_by_search
     if params[:filter].present?
       @query.where('username_lower ILIKE :filter or email ILIKE :filter', filter: "%#{params[:filter]}%")
+    end
+  end
+
+  def filter_by_ip
+    if params[:ip].present?
+      @query.where('ip_address = :ip or registration_ip_address = :ip', ip: params[:ip])
+    end
+  end
+
+  def filter_exclude
+    if params[:exclude].present?
+      @query.where('id != ?', params[:exclude])
     end
   end
 
@@ -48,11 +60,13 @@ class AdminUserIndexQuery
   def find_users_query
     append filter_by_trust
     append filter_by_query_classification
+    append filter_by_ip
+    append filter_exclude
     append filter_by_search
     @query
   end
 
   def find_users
-    find_users_query.take(100)
+    find_users_query.includes(:user_stat).take(100)
   end
 end

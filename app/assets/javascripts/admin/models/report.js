@@ -6,7 +6,7 @@ Discourse.Report = Discourse.Model.extend({
   valueAt: function(numDaysAgo) {
     if (this.data) {
       var wantedDate = moment().subtract('days', numDaysAgo).format('YYYY-MM-DD');
-      var item = this.data.find( function(d, i, arr) { return d.x === wantedDate; } );
+      var item = this.data.find( function(d) { return d.x === wantedDate; } );
       if (item) {
         return item.y;
       }
@@ -92,9 +92,9 @@ Discourse.Report = Discourse.Model.extend({
   icon: function() {
     switch( this.get('type') ) {
     case 'flags':
-      return 'icon-flag';
+      return 'fa-flag';
     case 'likes':
-      return 'icon-heart';
+      return 'fa-heart';
     default:
       return null;
     }
@@ -131,6 +131,10 @@ Discourse.Report = Discourse.Model.extend({
 
   thirtyDayCountTitle: function() {
     return this.changeTitle( this.sumDays(1,30), this.get('prev30Days'), 'in the previous 30 day period');
+  }.property('data'),
+
+  dataReversed: function() {
+    return this.get('data').toArray().reverse();
   }.property('data')
 
 });

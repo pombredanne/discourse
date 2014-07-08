@@ -9,17 +9,21 @@
 **/
 Discourse.UserStreamView = Discourse.View.extend(Discourse.LoadMore, {
   loading: false,
-  eyelineSelector: '#user-activity .user-stream .item',
+  eyelineSelector: '.user-stream .item',
   classNames: ['user-stream'],
 
-  loadMore: function() {
-    var userStreamView = this;
-    if (userStreamView.get('loading')) { return; }
+  actions: {
+    loadMore: function() {
+      var self = this;
+      if (this.get('loading')) { return; }
 
-    var stream = this.get('controller.model');
-    stream.findItems().then(function() {
-      userStreamView.set('loading', false);
-      userStreamView.get('eyeline').flushRest();
-    });
+      var stream = this.get('controller.model');
+      stream.findItems().then(function() {
+        self.set('loading', false);
+        self.get('eyeline').flushRest();
+      }).catch(function() {
+        // If we were already loading...
+      });
+    }
   }
 });

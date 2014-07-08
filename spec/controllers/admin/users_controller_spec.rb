@@ -62,6 +62,26 @@ describe Admin::UsersController do
 
     end
 
+    context '.generate_api_key' do
+      let(:evil_trout) { Fabricate(:evil_trout) }
+
+      it 'calls generate_api_key' do
+        User.any_instance.expects(:generate_api_key).with(@user)
+        xhr :post, :generate_api_key, user_id: evil_trout.id
+      end
+    end
+
+    context '.revoke_api_key' do
+
+      let(:evil_trout) { Fabricate(:evil_trout) }
+
+      it 'calls revoke_api_key' do
+        User.any_instance.expects(:revoke_api_key)
+        xhr :delete, :revoke_api_key, user_id: evil_trout.id
+      end
+
+    end
+
     context '.approve' do
 
       let(:evil_trout) { Fabricate(:evil_trout) }
@@ -117,6 +137,29 @@ describe Admin::UsersController do
         xhr :put, :grant_admin, user_id: @another_user.id
         @another_user.reload
         @another_user.should be_admin
+      end
+    end
+
+    context '.primary_group' do
+      before do
+        @another_user = Fabricate(:coding_horror)
+      end
+
+      it "raises an error when the user doesn't have permission" do
+        Guardian.any_instance.expects(:can_change_primary_group?).with(@another_user).returns(false)
+        xhr :put, :primary_group, user_id: @another_user.id
+        response.should be_forbidden
+      end
+
+      it "returns a 404 if the user doesn't exist" do
+        xhr :put, :primary_group, user_id: 123123
+        response.should be_forbidden
+      end
+
+      it "changes the user's primary group" do
+        xhr :put, :primary_group, user_id: @another_user.id, primary_group_id: 2
+        @another_user.reload
+        @another_user.primary_group_id.should == 2
       end
     end
 
@@ -326,6 +369,15 @@ describe Admin::UsersController do
         UserBlocker.expects(:unblock).with(@reg_user, @user, anything)
         xhr :put, :unblock, user_id: @reg_user.id
       end
+    end
+
+    context 'ip-info' do
+
+      it "uses ipinfo.io webservice to retrieve the info" do
+        Excon.expects(:get).with("http://ipinfo.io/123.123.123.123/json", read_timeout: 30, connect_timeout: 30)
+        xhr :get, :ip_info, ip: "123.123.123.123"
+      end
+
     end
 
   end

@@ -30,6 +30,23 @@ describe SiteSetting do
     end
   end
 
+  describe "normalized_embeddable_host" do
+    it 'returns the `embeddable_host` value' do
+      SiteSetting.stubs(:embeddable_host).returns("eviltrout.com")
+      SiteSetting.normalized_embeddable_host.should == "eviltrout.com"
+    end
+
+    it 'strip http from `embeddable_host` value' do
+      SiteSetting.stubs(:embeddable_host).returns("http://eviltrout.com")
+      SiteSetting.normalized_embeddable_host.should == "eviltrout.com"
+    end
+
+    it 'strip https from `embeddable_host` value' do
+      SiteSetting.stubs(:embeddable_host).returns("https://eviltrout.com")
+      SiteSetting.normalized_embeddable_host.should == "eviltrout.com"
+    end
+  end
+
   describe 'topic_title_length' do
     it 'returns a range of min/max topic title length' do
       SiteSetting.topic_title_length.should ==
@@ -71,7 +88,7 @@ describe SiteSetting do
   end
 
   describe "top_menu" do
-    before(:each) { SiteSetting.stubs(:top_menu).returns('one,-nope|two|three,-not|four,ignored|category/xyz') }
+    before(:each) { SiteSetting.top_menu = 'one,-nope|two|three,-not|four,ignored|category/xyz' }
 
     describe "items" do
       let(:items) { SiteSetting.top_menu_items }
@@ -88,24 +105,16 @@ describe SiteSetting do
     end
   end
 
-  describe "authorized extensions" do
+  describe "scheme" do
 
-    describe "authorized_uploads" do
-
-      it "trims spaces and leading dots" do
-        SiteSetting.stubs(:authorized_extensions).returns(" png | .jpeg|txt|bmp | .tar.gz")
-        SiteSetting.authorized_uploads.should == ["png", "jpeg", "txt", "bmp", "tar.gz"]
-      end
-
+    it "returns http when ssl is disabled" do
+      SiteSetting.expects(:use_https).returns(false)
+      SiteSetting.scheme.should == "http"
     end
 
-    describe "authorized_images" do
-
-      it "filters non-image out" do
-        SiteSetting.stubs(:authorized_extensions).returns(" png | .jpeg|txt|bmp")
-        SiteSetting.authorized_images.should == ["png", "jpeg", "bmp"]
-      end
-
+    it "returns https when using ssl" do
+      SiteSetting.expects(:use_https).returns(true)
+      SiteSetting.scheme.should == "https"
     end
 
   end

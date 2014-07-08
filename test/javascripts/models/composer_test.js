@@ -1,7 +1,7 @@
 module("Discourse.Composer");
 
 test('replyLength', function() {
-  var replyLength = function(val, expectedLength, text) {
+  var replyLength = function(val, expectedLength) {
     var composer = Discourse.Composer.create({ reply: val });
     equal(composer.get('replyLength'), expectedLength);
   };
@@ -57,6 +57,23 @@ test("appendText", function() {
   composer.appendText(" world");
   equal(composer.get('reply'), "hello world", "it appends text to existing text");
 
+  composer.clearState();
+  composer.appendText("a\n\n\n\nb");
+  composer.appendText("c",3,{block: true});
+
+  equal(composer.get("reply"), "a\n\nc\n\nb");
+
+  composer.clearState();
+  composer.appendText("ab");
+  composer.appendText("c",1,{block: true});
+
+  equal(composer.get("reply"), "a\n\nc\n\nb");
+
+  composer.clearState();
+  composer.appendText("\nab");
+  composer.appendText("c",0,{block: true});
+
+  equal(composer.get("reply"), "c\n\nab");
 });
 
 test("Title length for regular topics", function() {
@@ -187,4 +204,30 @@ test('initial category when uncategorized is not allowed', function() {
   Discourse.SiteSettings.allow_uncategorized_topics = false;
   var composer = Discourse.Composer.open({action: 'createTopic', draftKey: 'asfd', draftSequence: 1});
   ok(composer.get('categoryId') === undefined, "Uncategorized by default. Must choose a category.");
+});
+
+test('showPreview', function() {
+  var new_composer = function() {
+    return Discourse.Composer.open({action: 'createTopic', draftKey: 'asfd', draftSequence: 1});
+  };
+
+  Discourse.Mobile.mobileView = true;
+  equal(new_composer().get('showPreview'), false, "Don't show preview in mobile view");
+
+  Discourse.KeyValueStore.set({ key: 'composer.showPreview', value: 'true' });
+  equal(new_composer().get('showPreview'), false, "Don't show preview in mobile view even if KeyValueStore wants to");
+  Discourse.KeyValueStore.remove('composer.showPreview');
+
+  Discourse.Mobile.mobileView = false;
+  equal(new_composer().get('showPreview'), true, "Show preview by default in desktop view");
+});
+
+test('open with a quote', function() {
+  var quote = '[quote="neil, post:5, topic:413"]\nSimmer down you two.\n[/quote]';
+  var new_composer = function() {
+    return Discourse.Composer.open({action: Discourse.Composer.REPLY, draftKey: 'asfd', draftSequence: 1, quote: quote});
+  };
+
+  equal(new_composer().get('originalText'), quote, "originalText is the quote" );
+  equal(new_composer().get('replyDirty'), false, "replyDirty is initally false with a quote" );
 });

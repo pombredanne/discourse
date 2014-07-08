@@ -17,14 +17,18 @@ Discourse.PostStream = Em.Object.extend({
 
   notLoading: Em.computed.not('loading'),
 
-  filteredPostsCount: Em.computed.alias('stream.length'),
+  filteredPostsCount: function(){
+    return this.get("stream").length;
+  }.property("stream.@each"),
 
   /**
     Have we loaded any posts?
 
     @property hasPosts
   **/
-  hasPosts: Em.computed.gt('posts.length', 0),
+  hasPosts: function(){
+    return this.get('posts.length') > 0;
+  }.property("posts.@each"),
 
   /**
     Do we have a stream list of post ids?
@@ -50,14 +54,32 @@ Discourse.PostStream = Em.Object.extend({
   /**
     Have we loaded the first post in the stream?
 
-    @property firstPostLoaded
+    @property firstPostPresent
   **/
-  firstPostLoaded: function() {
+  firstPostPresent: function() {
     if (!this.get('hasLoadedData')) { return false; }
     return !!this.get('posts').findProperty('id', this.get('firstPostId'));
-  }.property('hasLoadedData', 'posts.[]', 'firstPostId'),
+  }.property('hasLoadedData', 'posts.@each', 'firstPostId'),
 
-  firstPostNotLoaded: Em.computed.not('firstPostLoaded'),
+  firstPostNotLoaded: Em.computed.not('firstPostPresent'),
+
+  /**
+    The first post that we have loaded. Useful for checking to see if we should scroll upwards
+
+    @property firstLoadedPost
+  **/
+  firstLoadedPost: function() {
+    return _.first(this.get('posts'));
+  }.property('posts.@each'),
+
+  /**
+    The last post we have loaded. Useful for checking to see if we should load more
+
+    @property lastLoadedPost
+  **/
+  lastLoadedPost: function() {
+    return _.last(this.get('posts'));
+  }.property('posts.@each'),
 
   /**
     Returns the id of the first post in the set
@@ -80,14 +102,14 @@ Discourse.PostStream = Em.Object.extend({
   /**
     Have we loaded the last post in the stream?
 
-    @property lastPostLoaded
+    @property loadedAllPosts
   **/
-  lastPostLoaded: function() {
+  loadedAllPosts: function() {
     if (!this.get('hasLoadedData')) { return false; }
     return !!this.get('posts').findProperty('id', this.get('lastPostId'));
   }.property('hasLoadedData', 'posts.@each.id', 'lastPostId'),
 
-  lastPostNotLoaded: Em.computed.not('lastPostLoaded'),
+  lastPostNotLoaded: Em.computed.not('loadedAllPosts'),
 
   /**
     Returns a JS Object of current stream filter options. It should match the query
@@ -97,41 +119,21 @@ Discourse.PostStream = Em.Object.extend({
   **/
   streamFilters: function() {
     var result = {};
-    if (this.get('bestOf')) { result.filter = "best_of"; }
+    if (this.get('summary')) { result.filter = "summary"; }
 
     var userFilters = this.get('userFilters');
-    if (userFilters) {
+    if (!Em.isEmpty(userFilters)) {
       var userFiltersArray = this.get('userFilters').toArray();
-      if (userFiltersArray.length > 0) { result.username_filters = userFiltersArray; }
+      if (userFiltersArray.length > 0) { result.username_filters = userFiltersArray.join(","); }
     }
 
     return result;
-  }.property('userFilters.[]', 'bestOf'),
+  }.property('userFilters.[]', 'summary'),
 
-  /**
-    The text describing the current filters. For display in the pop up at the bottom of the
-    screen.
-
-    @property filterDesc
-  **/
-  filterDesc: function() {
+  hasNoFilters: function() {
     var streamFilters = this.get('streamFilters');
-
-    if (streamFilters.filter && streamFilters.filter === "best_of") {
-      return I18n.t("topic.filters.best_of", {
-        n_best_posts: I18n.t("topic.filters.n_best_posts", { count: this.get('filteredPostsCount') }),
-        of_n_posts: I18n.t("topic.filters.of_n_posts", { count: this.get('topic.posts_count') })
-      });
-    } else if (streamFilters.username_filters) {
-      return I18n.t("topic.filters.user", {
-        n_posts: I18n.t("topic.filters.n_posts", { count: this.get('filteredPostsCount') }),
-        by_n_users: I18n.t("topic.filters.by_n_users", { count: streamFilters.username_filters.length })
-      });
-    }
-    return "";
+    return !(streamFilters && ((streamFilters.filter === 'summary') || streamFilters.userFilters));
   }.property('streamFilters.[]', 'topic.posts_count', 'posts.length'),
-
-  hasNoFilters: Em.computed.empty('filterDesc'),
 
   /**
     Returns the window of posts above the current set in the stream, bound to the top of the stream.
@@ -163,51 +165,49 @@ Discourse.PostStream = Em.Object.extend({
   **/
   nextWindow: function() {
     // If we can't find the last post loaded, bail
-    var lastPost = _.last(this.get('posts'));
-    if (!lastPost) { return []; }
+    var lastLoadedPost = this.get('lastLoadedPost');
+    if (!lastLoadedPost) { return []; }
 
     // Find the index of the last post loaded, if not found, bail
     var stream = this.get('stream');
-    var lastIndex = this.indexOf(lastPost);
+    var lastIndex = this.indexOf(lastLoadedPost);
     if (lastIndex === -1) { return []; }
-    if ((lastIndex + 1) >= this.get('filteredPostsCount')) { return []; }
+    if ((lastIndex + 1) >= this.get('highest_post_number')) { return []; }
 
     // find our window of posts
     return stream.slice(lastIndex+1, lastIndex+Discourse.SiteSettings.posts_per_page+1);
-  }.property('posts.@each', 'stream.@each'),
+  }.property('lastLoadedPost', 'stream.@each'),
 
 
   /**
-    Cancel any active filters on the stream and refresh it.
+    Cancel any active filters on the stream.
 
     @method cancelFilter
-    @returns {Ember.Deferred} a promise that resolves when the filter has been cancelled.
   **/
   cancelFilter: function() {
-    this.set('bestOf', false);
+    this.set('summary', false);
     this.get('userFilters').clear();
-    return this.refresh();
   },
 
   /**
-    Toggle best of mode on the stream.
+    Toggle summary mode for the stream.
 
-    @method toggleBestOf
-    @returns {Ember.Deferred} a promise that resolves when the best of stream has loaded.
+    @method toggleSummary
   **/
-  toggleBestOf: function() {
-    this.toggleProperty('bestOf');
-    this.refresh();
+  toggleSummary: function() {
+    this.get('userFilters').clear();
+    this.toggleProperty('summary');
+    return this.refresh();
   },
 
   /**
     Filter the stream to a particular user.
 
     @method toggleParticipant
-    @returns {Ember.Deferred} a promise that resolves when the filtered stream has loaded.
   **/
   toggleParticipant: function(username) {
     var userFilters = this.get('userFilters');
+    this.set('summary', false);
     if (userFilters.contains(username)) {
       userFilters.remove(username);
     } else {
@@ -230,37 +230,87 @@ Discourse.PostStream = Em.Object.extend({
     opts = opts || {};
     opts.nearPost = parseInt(opts.nearPost, 10);
 
-    var topic = this.get('topic');
-    var postStream = this;
+    var topic = this.get('topic'),
+        self = this;
 
     // Do we already have the post in our list of posts? Jump there.
     var postWeWant = this.get('posts').findProperty('post_number', opts.nearPost);
-    if (postWeWant) {
-      Discourse.TopicView.jumpToPost(topic.get('id'), opts.nearPost);
-      return Ember.Deferred.create(function(p) { p.reject(); });
-    }
+    if (postWeWant) { return Ember.RSVP.resolve(); }
 
     // TODO: if we have all the posts in the filter, don't go to the server for them.
-    postStream.set('loadingFilter', true);
+    self.set('loadingFilter', true);
 
-    opts = _.merge(opts, postStream.get('streamFilters'));
+    opts = _.merge(opts, self.get('streamFilters'));
 
     // Request a topicView
     return Discourse.PostStream.loadTopicView(topic.get('id'), opts).then(function (json) {
       topic.updateFromJson(json);
-      postStream.updateFromJson(json.post_stream);
-      postStream.setProperties({ loadingFilter: false, loaded: true });
-
-      if (opts.nearPost) {
-        Discourse.TopicView.jumpToPost(topic.get('id'), opts.nearPost);
-      }
-
-      Discourse.URL.set('queryParams', postStream.get('streamFilters'));
-    }, function(result) {
-      postStream.errorLoading(result);
+      self.updateFromJson(json.post_stream);
+      self.setProperties({ loadingFilter: false, loaded: true });
+    }).catch(function(result) {
+      self.errorLoading(result);
+      throw result;
     });
   },
   hasLoadedData: Em.computed.and('hasPosts', 'hasStream'),
+
+
+  /**
+    Fill in a gap of posts before a particular post
+
+    @method fillGapBefore
+    @paaram {Discourse.Post} post beside gap
+    @paaram {Array} gap array of post ids to load
+    @returns {Ember.Deferred} a promise that's resolved when the posts have been added.
+  **/
+  fillGapBefore: function(post, gap) {
+    var postId = post.get('id'),
+        stream = this.get('stream'),
+        idx = stream.indexOf(postId),
+        currentPosts = this.get('posts'),
+        self = this;
+
+    if (idx !== -1) {
+      // Insert the gap at the appropriate place
+      stream.splice.apply(stream, [idx, 0].concat(gap));
+      stream.enumerableContentDidChange();
+
+      var postIdx = currentPosts.indexOf(post);
+      if (postIdx !== -1) {
+        return this.findPostsByIds(gap).then(function(posts) {
+          posts.forEach(function(p) {
+            var stored = self.storePost(p);
+            if (!currentPosts.contains(stored)) {
+              currentPosts.insertAt(postIdx++, stored);
+            }
+          });
+
+          delete self.get('gaps.before')[postId];
+        });
+      }
+    }
+    return Ember.RSVP.resolve();
+  },
+
+  /**
+    Fill in a gap of posts after a particular post
+
+    @method fillGapAfter
+    @paaram {Discourse.Post} post beside gap
+    @paaram {Array} gap array of post ids to load
+    @returns {Ember.Deferred} a promise that's resolved when the posts have been added.
+  **/
+  fillGapAfter: function(post, gap) {
+    var postId = post.get('id'),
+        stream = this.get('stream'),
+        idx = stream.indexOf(postId);
+
+    if (idx !== -1) {
+      stream.pushObjects(gap);
+      return this.appendMore();
+    }
+    return Ember.RSVP.resolve();
+  },
 
   /**
     Appends the next window of posts to the stream. Call it when scrolling downwards.
@@ -269,23 +319,23 @@ Discourse.PostStream = Em.Object.extend({
     @returns {Ember.Deferred} a promise that's resolved when the posts have been added.
   **/
   appendMore: function() {
-    var postStream = this;
+    var self = this;
 
     // Make sure we can append more posts
-    if (!postStream.get('canAppendMore')) { return Ember.RSVP.reject(); }
+    if (!self.get('canAppendMore')) { return Ember.RSVP.resolve(); }
 
-    var postIds = postStream.get('nextWindow');
-    if (Ember.isEmpty(postIds)) { return Ember.RSVP.reject(); }
+    var postIds = self.get('nextWindow');
+    if (Ember.isEmpty(postIds)) { return Ember.RSVP.resolve(); }
 
-    postStream.set('loadingBelow', true);
+    self.set('loadingBelow', true);
 
     var stopLoading = function() {
-      postStream.set('loadingBelow', false);
+      self.set('loadingBelow', false);
     };
 
-    return postStream.findPostsByIds(postIds).then(function(posts) {
+    return self.findPostsByIds(postIds).then(function(posts) {
       posts.forEach(function(p) {
-        postStream.appendPost(p);
+        self.appendPost(p);
       });
       stopLoading();
     }, stopLoading);
@@ -294,18 +344,17 @@ Discourse.PostStream = Em.Object.extend({
   /**
     Prepend the previous window of posts to the stream. Call it when scrolling upwards.
 
-    @method appendMore
+    @method prependMore
     @returns {Ember.Deferred} a promise that's resolved when the posts have been added.
   **/
   prependMore: function() {
-    var postStream = this,
-        rejectedPromise = Ember.Deferred.create(function(p) { p.reject(); });
+    var postStream = this;
 
     // Make sure we can append more posts
-    if (!postStream.get('canPrependMore')) { return rejectedPromise; }
+    if (!postStream.get('canPrependMore')) { return Ember.RSVP.resolve(); }
 
     var postIds = postStream.get('previousWindow');
-    if (Ember.isEmpty(postIds)) { return rejectedPromise; }
+    if (Ember.isEmpty(postIds)) { return Ember.RSVP.resolve(); }
 
     postStream.set('loadingAbove', true);
     return postStream.findPostsByIds(postIds.reverse()).then(function(posts) {
@@ -322,14 +371,13 @@ Discourse.PostStream = Em.Object.extend({
     `undoPost` when it fails.
 
     @method stagePost
-    @param {Discourse.Post} the post to stage in the stream
-    @param {Discourse.User} the user creating the post
+    @param {Discourse.Post} post the post to stage in the stream
+    @param {Discourse.User} user the user creating the post
   **/
   stagePost: function(post, user) {
 
     // We can't stage two posts simultaneously
     if (this.get('stagingPost')) { return false; }
-
     this.set('stagingPost', true);
 
     var topic = this.get('topic');
@@ -343,12 +391,14 @@ Discourse.PostStream = Em.Object.extend({
     post.setProperties({
       post_number: topic.get('highest_post_number'),
       topic: topic,
-      created_at: new Date()
+      created_at: new Date(),
+      id: -1
     });
 
     // If we're at the end of the stream, add the post
-    if (this.get('lastPostLoaded')) {
+    if (this.get('loadedAllPosts')) {
       this.appendPost(post);
+      this.get('stream').addObject(post.get('id'));
     }
 
     return true;
@@ -361,7 +411,19 @@ Discourse.PostStream = Em.Object.extend({
     @param {Discourse.Post} the post we saved in the stream.
   **/
   commitPost: function(post) {
-    this.appendPost(post);
+    if (this.get('loadedAllPosts')) {
+      this.appendPost(post);
+    }
+    // Correct for a dangling deleted post, if needed
+    // compensating for message bus pumping in new posts while
+    // your post is in transit
+    if(this.get('topic.highest_post_number') < post.get('post_number')){
+      this.set('topic.highest_post_number', post.get('post_number'));
+    }
+    this.get('stream').removeObject(-1);
+    this.get('postIdentityMap').set(-1, null);
+    this.get('postIdentityMap').set(post.get('id'), post);
+
     this.get('stream').addObject(post.get('id'));
     this.set('stagingPost', false);
   },
@@ -374,16 +436,19 @@ Discourse.PostStream = Em.Object.extend({
     @param {Discourse.Post} the post to undo from the stream
   **/
   undoPost: function(post) {
+    this.get('stream').removeObject(-1);
     this.posts.removeObject(post);
+    this.get('postIdentityMap').set(-1, null);
 
     var topic = this.get('topic');
-
     this.set('stagingPost', false);
 
     topic.setProperties({
       highest_post_number: (topic.get('highest_post_number') || 0) - 1,
       posts_count: (topic.get('posts_count') || 0) - 1
     });
+
+    // TODO unfudge reply count on parent post
   },
 
   /**
@@ -406,7 +471,10 @@ Discourse.PostStream = Em.Object.extend({
     @returns {Discourse.Post} the post that was inserted.
   **/
   appendPost: function(post) {
-    this.get('posts').addObject(this.storePost(post));
+    var stored = this.storePost(post);
+    if (stored) {
+      this.get('posts').addObject(stored);
+    }
     return post;
   },
 
@@ -420,9 +488,13 @@ Discourse.PostStream = Em.Object.extend({
     if (Em.isEmpty(posts)) { return; }
 
     var postIds = posts.map(function (p) { return p.get('id'); });
+    var identityMap = this.get('postIdentityMap');
 
     this.get('stream').removeObjects(postIds);
     this.get('posts').removeObjects(posts);
+    postIds.forEach(function(id){
+      identityMap.remove(id);
+    });
   },
 
   /**
@@ -450,11 +522,87 @@ Discourse.PostStream = Em.Object.extend({
     // We only trigger if there are no filters active
     if (!this.get('hasNoFilters')) { return; }
 
-    var lastPostLoaded = this.get('lastPostLoaded');
+    var loadedAllPosts = this.get('loadedAllPosts');
 
     if (this.get('stream').indexOf(postId) === -1) {
       this.get('stream').addObject(postId);
-      if (lastPostLoaded) { this.appendMore(); }
+      if (loadedAllPosts) { this.appendMore(); }
+    }
+  },
+
+  triggerRecoveredPost: function(postId){
+    var self = this,
+        postIdentityMap = this.get('postIdentityMap'),
+        existing = postIdentityMap.get(postId);
+
+    if(existing){
+      this.triggerChangedPost(postId, new Date());
+    } else {
+      // need to insert into stream
+      var url = "/posts/" + postId;
+      Discourse.ajax(url).then(function(p){
+        var post = Discourse.Post.create(p);
+        var stream = self.get("stream");
+        var posts = self.get("posts");
+        self.storePost(post);
+
+        // we need to zip this into the stream
+        var index = 0;
+        stream.forEach(function(postId){
+          if(postId < p.id){
+            index+= 1;
+          }
+        });
+
+        stream.insertAt(index, p.id);
+
+        index = 0;
+        posts.forEach(function(_post){
+          if(_post.id < p.id){
+            index+= 1;
+          }
+        });
+
+        if(index < posts.length){
+          posts.insertAt(index, post);
+        } else {
+          if(post.post_number < posts[posts.length-1].post_number + 5){
+            self.appendMore();
+          }
+        }
+      });
+    }
+  },
+
+  triggerDeletedPost: function(postId){
+    var self = this,
+        postIdentityMap = this.get('postIdentityMap'),
+        existing = postIdentityMap.get(postId);
+
+    if(existing){
+      var url = "/posts/" + postId;
+      Discourse.ajax(url).then(
+        function(p){
+          self.storePost(Discourse.Post.create(p));
+        },
+        function(){
+          self.removePosts([existing]);
+        });
+    }
+  },
+
+  triggerChangedPost: function(postId, updatedAt) {
+    if (!postId) { return; }
+
+    var postIdentityMap = this.get('postIdentityMap'),
+        existing = postIdentityMap.get(postId),
+        self = this;
+
+    if (existing && existing.updated_at !== updatedAt) {
+      var url = "/posts/" + postId;
+      Discourse.ajax(url).then(function(p){
+        self.storePost(Discourse.Post.create(p));
+      });
     }
   },
 
@@ -511,10 +659,11 @@ Discourse.PostStream = Em.Object.extend({
     @method updateFromJson
   **/
   updateFromJson: function(postStreamData) {
-    var postStream = this;
+    var postStream = this,
+        posts = this.get('posts');
 
-    var posts = this.get('posts');
     posts.clear();
+    this.set('gaps', null);
     if (postStreamData) {
       // Load posts if present
       postStreamData.posts.forEach(function(p) {
@@ -539,7 +688,10 @@ Discourse.PostStream = Em.Object.extend({
     @returns {Discourse.Post} the post from the identity map
   **/
   storePost: function(post) {
-    var postId = post.get('id');
+    // Calling `Em.get(undefined` raises an error
+    if (!post) { return; }
+
+    var postId = Em.get(post, 'id');
     if (postId) {
       var postIdentityMap = this.get('postIdentityMap'),
           existing = postIdentityMap.get(post.get('id'));
@@ -552,6 +704,12 @@ Discourse.PostStream = Em.Object.extend({
 
       post.set('topic', this.get('topic'));
       postIdentityMap.set(post.get('id'), post);
+
+      // Update the `highest_post_number` if this post is higher.
+      var postNumber = post.get('post_number');
+      if (postNumber && postNumber > (this.get('topic.highest_post_number') || 0)) {
+        this.set('topic.highest_post_number', postNumber);
+      }
     }
     return post;
   },
@@ -592,7 +750,7 @@ Discourse.PostStream = Em.Object.extend({
     return this.loadIntoIdentityMap(unloaded).then(function() {
       return postIds.map(function (p) {
         return postIdentityMap.get(p);
-      });
+      }).compact();
     });
   },
 
@@ -614,8 +772,7 @@ Discourse.PostStream = Em.Object.extend({
 
     var url = "/t/" + this.get('topic.id') + "/posts.json",
         data = { post_ids: postIds },
-        postStream = this,
-        result = Em.A();
+        postStream = this;
 
     return Discourse.ajax(url, {data: data}).then(function(result) {
       var posts = Em.get(result, "post_stream.posts");
@@ -668,7 +825,11 @@ Discourse.PostStream = Em.Object.extend({
     // If the result is 403 it means invalid access
     if (status === 403) {
       topic.set('errorTitle', I18n.t('topic.invalid_access.title'));
-      topic.set('message', I18n.t('topic.invalid_access.description'));
+      if (Discourse.User.current()) {
+        topic.set('message', I18n.t('topic.invalid_access.description'));
+      } else {
+        topic.set('message', I18n.t('topic.invalid_access.login_required'));
+      }
       return;
     }
 
@@ -682,14 +843,14 @@ Discourse.PostStream = Em.Object.extend({
 
 Discourse.PostStream.reopenClass({
 
-  create: function(args) {
-    var postStream = this._super(args);
+  create: function() {
+    var postStream = this._super.apply(this, arguments);
     postStream.setProperties({
       posts: Em.A(),
       stream: Em.A(),
       userFilters: Em.Set.create(),
       postIdentityMap: Em.Map.create(),
-      bestOf: false,
+      summary: false,
       loaded: false,
       loadingAbove: false,
       loadingBelow: false,
@@ -700,8 +861,8 @@ Discourse.PostStream.reopenClass({
   },
 
   loadTopicView: function(topicId, args) {
-    var opts = _.merge({}, args);
-    var url = Discourse.getURL("/t/") + topicId;
+    var opts = _.merge({}, args),
+        url = Discourse.getURL("/t/") + topicId;
     if (opts.nearPost) {
       url += "/" + opts.nearPost;
     }

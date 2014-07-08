@@ -15,7 +15,8 @@ describe PostAlertObserver do
       it 'creates a notification' do
         lambda {
           PostAction.act(evil_trout, post, PostActionType.types[:like])
-        }.should change(Notification, :count).by(1)
+          # one like and one welcome badge
+        }.should change(Notification, :count).by(2)
       end
     end
 
@@ -38,71 +39,40 @@ describe PostAlertObserver do
         post.revise(evil_trout, "world is the new body of the message")
       }.should change(post.user.notifications, :count).by(1)
     end
-  end
 
-  context 'quotes' do
-
-    it 'notifies a user by username' do
+    it 'does not notifiy a user of the revision when edit notifications are disabled' do
+      SiteSetting.stubs(:disable_edit_notifications).returns(true)
       lambda {
-        Fabricate(:post, raw: '[quote="EvilTrout, post:1"]whatup[/quote]')
-      }.should change(evil_trout.notifications, :count).by(1)
-    end
-
-    it "won't notify the user a second time on revision" do
-      p1 = Fabricate(:post, raw: '[quote="Evil Trout, post:1"]whatup[/quote]')
-      lambda {
-        p1.revise(p1.user, '[quote="Evil Trout, post:1"]whatup now?[/quote]')
-      }.should_not change(evil_trout.notifications, :count)
-    end
-
-    it "doesn't notify the poster" do
-      topic = post.topic
-      lambda {
-        new_post = Fabricate(:post, topic: topic, user: topic.user, raw: '[quote="Bruce Wayne, post:1"]whatup[/quote]')
-      }.should_not change(topic.user.notifications, :count).by(1)
-    end
-  end
-
-  context '@mentions' do
-
-    let(:user) { Fabricate(:user) }
-    let(:mention_post) { Fabricate(:post, user: user, raw: 'Hello @eviltrout')}
-    let(:topic) { mention_post.topic }
-
-    it 'notifies a user' do
-      lambda {
-        mention_post
-      }.should change(evil_trout.notifications, :count).by(1)
-    end
-
-    it "won't notify the user a second time on revision" do
-      mention_post
-      lambda {
-        mention_post.revise(mention_post.user, "New raw content that still mentions @eviltrout")
-      }.should_not change(evil_trout.notifications, :count)
-    end
-
-    it "doesn't notify the user who created the topic in regular mode" do
-      topic.notify_regular!(user)
-      mention_post
-      lambda {
-        Fabricate(:post, user: user, raw: 'second post', topic: topic)
-      }.should_not change(user.notifications, :count).by(1)
+        post.revise(evil_trout, "world is the new body of the message")
+      }.should_not change(post.user.notifications, :count).by(1)
     end
 
   end
-
 
   context 'private message' do
     let(:user) { Fabricate(:user) }
     let(:mention_post) { Fabricate(:post, user: user, raw: 'Hello @eviltrout')}
-    let(:topic) { mention_post.topic }
+    let(:topic) do
+      topic = mention_post.topic
+      topic.update_column :archetype, Archetype.private_message
+      topic
+    end
 
     it "won't notify someone who can't see the post" do
       lambda {
         Guardian.any_instance.expects(:can_see?).with(instance_of(Post)).returns(false)
         mention_post
+        PostAlerter.new.after_create_post(mention_post)
+        PostAlerter.new.after_save_post(mention_post)
       }.should_not change(evil_trout.notifications, :count)
+    end
+
+    it 'creates like notifications' do
+      other_user = Fabricate(:user)
+      topic.allowed_users << user << other_user
+      lambda {
+        PostAction.act(other_user, mention_post, PostActionType.types[:like])
+      }.should change(user.notifications, :count)
     end
   end
 

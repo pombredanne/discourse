@@ -22,8 +22,16 @@ Discourse.Site = Discourse.Model.extend({
     return postActionTypes.filterProperty('is_flag', true);
   }.property('post_action_types.@each'),
 
+  sortedCategories: Em.computed.sort('categories', function(a, b) {
+    return (b.get('topic_count') || 0) - (a.get('topic_count') || 0);
+  }),
+
   postActionTypeById: function(id) {
     return this.get("postActionByIdLookup.action" + id);
+  },
+
+  topicFlagTypeById: function(id) {
+    return this.get("topicFlagByIdLookup.action" + id);
   },
 
   updateCategory: function(newCategory) {
@@ -44,12 +52,21 @@ Discourse.Site.reopenClass(Discourse.Singleton, {
     return Discourse.Site.create(PreloadStore.get('site'));
   },
 
-  create: function(obj) {
-    var result = this._super(obj);
+  create: function() {
+    var result = this._super.apply(this, arguments);
 
     if (result.categories) {
+      var byId = {};
       result.categories = _.map(result.categories, function(c) {
-        return Discourse.Category.create(c);
+        byId[c.id] = Discourse.Category.create(c);
+        return byId[c.id];
+      });
+
+      // Associate the categories with their parents
+      result.categories.forEach(function (c) {
+        if (c.get('parent_category_id')) {
+          c.set('parentCategory', byId[c.get('parent_category_id')]);
+        }
       });
     }
 
@@ -69,6 +86,16 @@ Discourse.Site.reopenClass(Discourse.Singleton, {
         return actionType;
       });
     }
+
+    if (result.topic_flag_types) {
+      result.topicFlagByIdLookup = Em.Object.create();
+      result.topic_flag_types = _.map(result.topic_flag_types,function(p) {
+        var actionType = Discourse.PostActionType.create(p);
+        result.topicFlagByIdLookup.set("action" + p.id, actionType);
+        return actionType;
+      });
+    }
+
     if (result.archetypes) {
       result.archetypes = _.map(result.archetypes,function(a) {
         return Discourse.Archetype.create(a);

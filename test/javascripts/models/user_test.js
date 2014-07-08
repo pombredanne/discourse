@@ -26,14 +26,14 @@ test("isAllowedToUploadAFile", function() {
   ok(user.isAllowedToUploadAFile("image"), "moderator can always upload a file");
 });
 
+test("avatarTemplate", function(){
+  var oldCDN = Discourse.CDN;
+  var oldBase = Discourse.BaseUrl;
+  Discourse.BaseUrl = "frogs.com";
 
-asyncTestDiscourse("findByUsername", function() {
-  expect(3);
-
-  Discourse.User.findByUsername('eviltrout').then(function (user) {
-    present(user);
-    equal(user.get('username'), 'eviltrout', 'it has the correct username');
-    equal(user.get('name'), 'Robin Ward', 'it has the full name since it has details');
-    start();
-  });
+  equal(Discourse.User.avatarTemplate("sam", 1), "/user_avatar/frogs.com/sam/{size}/1.png");
+  Discourse.CDN = "http://awesome.cdn.com";
+  equal(Discourse.User.avatarTemplate("sam", 1), "http://awesome.cdn.com/user_avatar/frogs.com/sam/{size}/1.png");
+  Discourse.CDN = oldCDN;
+  Discourse.BaseUrl = oldBase;
 });

@@ -1,15 +1,18 @@
 var originalTemplates, originalMobileViewFlag;
 
-var lookup = function(lookupString, expectedTemplate, message) {
-  // {singleton: false} prevents Ember from caching lookup results (what would make them persistent across multiple tests, breaking test isolation)
-  equal(Discourse.__container__.lookup(lookupString, {singleton: false}), expectedTemplate, message);
-};
+function lookup(lookupString, expectedTemplate, message) {
+  var container = Discourse.__container__;
+  equal(container.lookup(lookupString), expectedTemplate, message);
 
-var setTemplates = function(lookupStrings) {  
+  // Remove any cached results from the container
+  container.unregister(lookupString);
+}
+
+function setTemplates(lookupStrings) {
   lookupStrings.forEach(function(lookupString) {
     Ember.TEMPLATES[lookupString] = lookupString;
   });
-};
+}
 
 module("Discourse.Resolver", {
   setup: function() {
@@ -93,6 +96,19 @@ test("resolves mobile templates to 'mobile/' namespace", function() {
   lookup("template:foo", "mobile/foo", "finding mobile version even if normal one is not present");
   lookup("template:bar", "mobile/bar", "preferring mobile version when both mobile and normal versions are present");
   lookup("template:baz", "baz", "falling back to a normal version when mobile version is not present");
+});
+
+test("resolves plugin templates to 'javascripts/' namespace", function() {
+  setTemplates([
+    "javascripts/foo",
+    "bar",
+    "javascripts/bar",
+    "baz"
+  ]);
+
+  lookup("template:foo", "javascripts/foo", "finding plugin version even if normal one is not present");
+  lookup("template:bar", "javascripts/bar", "preferring plugin version when both versions are present");
+  lookup("template:baz", "baz", "falling back to a normal version when plugin version is not present");
 });
 
 test("resolves templates with 'admin' prefix to 'admin/templates/' namespace", function() {

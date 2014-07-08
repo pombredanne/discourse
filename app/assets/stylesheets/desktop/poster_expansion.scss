@@ -1,48 +1,82 @@
 // styles that apply to the "share" popup when sharing a link to a post or topic
 
-@import "common/foundation/variables";
-@import "common/foundation/mixins";
-
 #poster-expansion {
   position: absolute;
+  width: 460px;
   left: 20px;
   z-index: 990;
-  @include border-radius-all(3px);
-  @include box-shadow(1px 1px 5px $darkish_gray);
-  background-color: $white;
-  padding: 7px 7px 6px 7px;
-  width: 400px;
+  box-shadow: 0 2px 6px scale-color-diff();
+  margin-top: -2px;
+  background-color: $secondary;
+  padding: 12px 12px 5px 12px;
 
   h1 {
-    font-size: 30px;
-    line-height: 33px;
-    margin-bottom: 8px;
-
+    display: inline-block;
+    min-width: 120px;
+    font-size: 25px;
+    line-height: 1.25;
+    display: block;
+    max-width: 280px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     a {
-      color: #333;
+      color: $primary;
     }
   }
 
   h2 {
-    font-size: 20px;
-    line-height: 22px;
+    font-size: 15px;
+    line-height: 1.25;
     font-weight: normal;
+    display: block;
+    max-width: 280px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 
     a {
-      color: #333;
+      color: $primary;
     }
   }
 
   h3 {
     font-size: 13px;
     font-weight: normal;
-    margin-top: 15px;
-    color: #666;
+    margin-top: 0;
+    color: scale-color($primary, $lightness: 50%);
+  }
+  .groups {
+    font-size: 13px;
+    font-weight: normal;
+    margin-top: 0;
+    color: $primary;
+
+    .group-link {
+      color: $primary;
+    }
+  }
+
+  .metadata {
+    position: absolute;
+    right: 20px;
+    top: 10px;
+    max-width: 180px;
+    text-align: right;
   }
 
   .bottom {
     clear: both;
     padding-top: 10px;
+  }
+
+  .bio {
+    max-height: 100px;
+    overflow: auto;
+    margin-bottom: 10px;
+    img {
+      max-width: 100%;
+    }
   }
 
   img.avatar {
@@ -55,11 +89,42 @@
   }
 
   p.loading {
-    margin-top: 30px;
-    color: #666;
+    margin-top: 45px;
+    color: $primary;
   }
 
   .btn {
     margin: 0 0 7px 0;
+  }
+
+  .new-user a {
+    color: scale-color($primary, $lightness: 70%);
+  }
+
+  &.show-badges {
+    width: 560px;
+
+    .names {
+      width: 250px;
+      float: left;
+    }
+
+    .badge-section {
+      margin-top: 10px;
+      float: left;
+      width: 300px;
+
+      h3 {
+        color: $primary;
+        font-size: 14px;
+        margin-bottom: -8px;
+      }
+    }
+
+    .more-user-badges {
+      @extend .user-badge;
+      padding: 3px 8px;
+      font-size: 13px;
+    }
   }
 }

@@ -1,6 +1,6 @@
 module("Discourse.SelectedPostsCount");
 
-var buildTestObj = function(params, topicParams) {
+var buildTestObj = function(params) {
   return Ember.Object.createWithMixins(Discourse.SelectedPostsCount, params || {});
 };
 
@@ -14,7 +14,7 @@ test("without selectedPosts", function () {
 });
 
 test("with some selectedPosts", function() {
-  var testObj = buildTestObj({ selectedPosts: [Discourse.Post.create()] });
+  var testObj = buildTestObj({ selectedPosts: [Discourse.Post.create({id: 123})] });
   equal(testObj.get('selectedPostsCount'), 1, "It returns the amount of posts");
 });
 

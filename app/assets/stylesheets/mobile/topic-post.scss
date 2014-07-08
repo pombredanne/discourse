@@ -1,24 +1,23 @@
-@import "common/foundation/variables";
+.gap {
+  background-color: scale-color-diff();
+  padding: 5px 15px;
+  color: $primary;
+  text-align: center;
+  margin: 0 10px;
+}
 
 .topic-post {
-  border-top: 1px solid #ddd;
+  border-top: 1px solid scale-color-diff();
   padding: 6px 0 3px 0;
-  &:first-of-type {
-    border-top: none;
-  }
 }
 
 nav.post-controls {
-  background-color: #fff;
-  padding: 0px;
-  border-right: 1px solid #ddd;
-  margin-top: 10px;
-  button {color: #aaa;
-  border-radius: 4px;
-  margin-right: 2px;
-
+  background-color: $secondary;
+  padding: 0;
+  border-right: 1px solid scale-color-diff();
+  clear: both;
+  button {color: scale-color($primary, $lightness: 50%);
 }
-
 
 span.badge-posts {
   margin-right: 5px;
@@ -35,13 +34,9 @@ span.badge-posts {
 
 button.create {
   float: right !important;
-  border: 1px solid #888;
   margin-right: 0;
-  color: #888;
-  padding-right: 7px;
-}
- 	.like {
-    border-right: 1px solid #ddd;
+  color: $primary;
+  padding-right: 7px;}
 }
 
 .create i {
@@ -50,52 +45,83 @@ button.create {
 
 
 button {
-	border: none;
-  font-size: 16px;
+  border: none;
+  font-size: 17px;
   padding: 8px 10px;
   vertical-align: top;
   background: transparent;
- 	border: 1px solid #ddd;
   float: left !important;
-    &:last-of-type {
-      border-right: 1px solid #ddd;
+  &.hidden {
+    display: none;
+  }
+  &.admin {
+    position: relative;
+  }
+  &.like, &.edit, &.flag, &.delete, &.share, &.bookmark, &.create, &.admin {
+    float: right;
+  }
+  &.expand-post {
+    margin:10px 0 10px 0;
+  }
+  .read-icon {
+    &:before {
+      font-family: "FontAwesome";
+      content: "\f02e";
     }
-       &:hover {
-        }
-        &:active {
-        }
-        &.hidden {
-          display: none;
-        }
-        &.like, &.edit, &.flag, &.delete, &.share, &.bookmark, &.create {
-          float: right;
-        }
-        .read-icon {
-          &:before {
-            font-family: "FontAwesome";
-            content: "\f02e";
-          }
-          &.unseen {
-            &:before {
-              content: "\f097";
-            }
-          }
-          &.last-read {
-            color: $red;
-          }
-          &.bookmarked {
-            &:before {
-              color: $bookmarkColor;
-            }
-          }
-        }
+    &.unseen {
+      &:before {
+        content: "\f097";
       }
     }
+    &.last-read {
+      color: $danger;}
+    &.bookmarked {
+      &:before {
+        color: $tertiary;
+      }
+    }
+  }
+}
 
+nav.post-controls {
+  position: relative;
+}
+
+.post-admin-menu {
+  background-color: $secondary;
+  width: 205px;
+  padding: 10px;
+  border: 1px solid scale-color-diff();
+  position: absolute;
+  text-align: left;
+  bottom: -26px;
+  left: 0;
+  z-index: 1000;
+  display: none;
+
+  h3 {
+    color: $primary;
+    font-size: 1em;
+  }
+
+  ul {
+    list-style: none;
+    margin: 10px 0 0 0;
+  }
+
+  li {
+    width: 176px;
+    margin-bottom: 5px;
+
+    i.fa {
+      width: 14px;
+      margin-right: 14px;
+    }
+  }
+}
 
 
 .embedded-posts {
-
   .topic-meta-data h5 a {
     margin-left: 10px;
   }
@@ -118,41 +144,39 @@ a.reply-to-tab {
 a.star {
   display: inline-block;
   float: left;
-  font-size: 1.4em !important;
-  margin-top: 3px;
+  font-size: 1.3em;
+  margin-top: 4px;
 }
 
 #main a.star.starred {
-	text-shadow: none !important;
+  text-shadow: none !important;
 }
 
-.profiler-results {
-  display: none;
+.topic-post .boxed .contents {
+  float: none;
+  padding-top: 5px;
+  padding-bottom: 0px;
+  clear: both;
 }
 
-.topic-summary {
+.topic-map {
 
   .btn {
     border-radius: 0 4px 0 4px;
   }
 
-  .topic-links li {
-    word-wrap: break-word;
-  }
-
-  border-radius: 5px;
-  margin: 15px 10px 20px 10px;
-  border: 1px solid #ddd;
+  margin: 30px 10px 10px 10px;
+  background: scale-color(scale-color-diff(), $lightness: 40%);
 
   h3 {
     margin-bottom: 4px;
-    color: #323232;
+    color: $primary;
     line-height: 23px;
   }
 
   h4 {
     margin: 0 0 3px 0;
-    color: #6c7376;
+    color: $primary;
     font-weight: normal;
     font-size: 12px;
     line-height: 15px;
@@ -182,7 +206,11 @@ a.star {
       font-weight: normal;
       font-size: 11px;
       line-height: 14px;
-          }
+    }
+
+    /* limit to one line of avatars for now */
+    height:30px;
+    overflow:hidden !important; // otherwise parent mobile styles conflict
   }
 
   .avatar {
@@ -190,9 +218,13 @@ a.star {
     margin-right: 4px;
   }
 
-  .summary {
-    &.collapsed {
+  .map-collapsed {
+    .secondary {
+      display: none;
     }
+  }
+
+  .map {
     li {
       float: left;
       padding: 7px 11px;
@@ -200,15 +232,11 @@ a.star {
         border-right: 0;
       }
     }
-    a,
-
-    .number {
+    a, .number {
       font-weight: bold;
       line-height: 20px;
     }
-    .number {
-      color: #445a62;
-    }
+
     .avatar + a {
       float: left;
     }
@@ -216,35 +244,45 @@ a.star {
   .avatars,
   .links,
   .information {
-    padding: 7px 14px;
-    color: #000;
+    padding: 7px 10px;
+    color: $primary;
+    overflow: auto;
   }
+
   .information {
-    border-top: 1px solid #d1d1d2;
+    border-top: 2px solid scale-color-diff();
   }
+
+  .domain {
+    color: scale-color($primary, $lightness: 75%);
+  }
+
   .topic-links {
     .badge-notification {
-      margin: 0 0 4px;
+      margin: 1px 5px 2px 0;
     }
   }
+
+  td {
+    vertical-align: top;
+  }
+
   .buttons {
     float: right;
     .btn {
       border: 0;
-      border-bottom: 1px solid #ddd;
-      border-left: 1px solid #e6e6e6;
+      border-bottom: 1px solid scale-color-diff();
+      border-left: 1px solid scale-color-diff();
       padding: 0 23px;
-      color: #444;
-      background: #ddd;
+      color: $primary;
+      background: scale-color-diff();
       &:hover {
-        background: #ccc;
-        color: #444;
-        border-bottom: 1px solid #ccc;
+        background: scale-color($primary, $lightness: 75%);
+        color: $primary;
+        border-bottom: 1px solid scale-color-diff();
 
       }
-      &.collapsed {
-      }
-      .icon {
+      .fa {
         margin: 0;
         font-size: 18px;
         line-height: 52px;
@@ -254,8 +292,14 @@ a.star {
 }
 
 #topic-footer-buttons {
-  border-top: 1px solid #ddd;
+  border-top: 1px solid scale-color-diff();
   padding: 20px 10px 0 10px;
+}
+
+/* this is to force the drop-down notification state description para below the button */
+#topic-footer-buttons p {
+  clear: both;
+  margin: 0;
 }
 
 #suggested-topics {
@@ -265,12 +309,13 @@ a.star {
     display: none;
     }
 
-   a.badge-category {
+   a.badge-category, a.badge-category-parent {
     font-size: 10px;
+    vertical-align: top;
     }
 
    .title {
-    font-size: 14px; line-height: 8px; 
+    font-size: 14px; line-height: 8px;
   }
 
 }
@@ -278,8 +323,8 @@ a.star {
 
 
 span.post-count {
-  background: #000;
-  color: #fff;
+  background: $primary;
+  color: $secondary;
   opacity: .8;
 }
 
@@ -288,31 +333,33 @@ span.post-count {
   .btn {
     margin-bottom: 5px;
     margin-right: 10px;
-    .icon-star {margin-right: 5px;}
+    .fa-star {margin-right: 5px;}
   }
 }
 
 #topic-title {
   z-index: 1000;
-  background: #eee;
   margin: 0 0 0 0 !important;
   padding: 15px 10px 15px 10px;
 }
 
-.topic-post article.boxed img {
-  max-width: 100%;
+.topic-post {
+  &.moderator {
+    background-color: scale-color($highlight, $lightness: 60%);
+  }
 }
 
 .quote-button {
   display: none;
   position: absolute;
-  background-color: #666;
-  color: #fff;
+  background-color: scale-color($primary, $lightness: 50%);
+  color: $primary;
   padding: 10px;
   width: 90px;
+  z-index: 401;
 
   &:hover {
-    background-color: #999;
+    background-color: scale-color($primary, $lightness: 50%);
     cursor: pointer;
   }
 }
@@ -339,10 +386,15 @@ iframe {
 
 .dropdown-menu li  {
   margin: 5px 0;
+  .fa {
+    float: left;
+    margin-right: 5px;
+    padding-top: 1px;
+  }
 }
 
 .btn-group {
-  margin-top: 50px;
+  margin-top: 25px;
   position: relative;
 }
 
@@ -351,8 +403,17 @@ iframe {
   position: relative;
 }
 
-.contents .cooked a {
-  word-wrap: break-word;
+.wiki {
+  float: left;
+  padding: 10px;
+  color: #408040;
+  i {
+    float: left;
+  }
+  h3 {
+    float: left;
+    margin-left: 10px;
+  }
 }
 
 .modal-body {
@@ -365,18 +426,8 @@ iframe {
 
 
 #share-link {
-  width: 265px;
-  margin-left: -4px;
-
-    h3 {
-      margin: 5px 0;
-    }
-
-    input[type=text] {
-      font-size: 16px;
-      width: 92%;
-      margin-bottom: 10px;
-    }
+  width: 290px;
+  margin-left: 20px;
 }
 
 #selected-posts {
@@ -392,17 +443,22 @@ iframe {
   margin-top: -20px;
 }
 
+.post-action {
+  float:right;
+  margin-right: 10px;
+}
+
 .post-action .relative-date {
   margin-left: 5px;
 }
 
 .deleted {
-  background-color: lighten(red, 45%);
+background-color: scale-color($danger, $lightness: 75%);
 }
 
 #show-topic-admin {
-  color: #7b7b7b;
-  right: 0px;
+  color: scale-color($primary, $lightness: 50%);
+  right: 0;
   border-right: 0;
   padding-right: 4px;
   padding-left: 5px;
@@ -417,31 +473,29 @@ iframe {
   border-radius: 4px;
   padding: 4px;
   margin: -4px 0 0 -4px;
-  background-color: lighten(yellow, 35%);}
-
-.topic-meta-data {
-white-space: nowrap; 
-float: left;
-}
-
-.user-title {
-  color: #aaa;
-  padding-top: 2px;
-  padding-left: 8px;
-  overflow: hidden;
-  margin-right: 50px;
 }
 
 span.btn-text {display: none;}
 
 blockquote {
   clear:both;
-  margin: 0;
+  /* leave browser defaults for top and bottom here */
+  margin-left: 0;
+  margin-right: 0;
+}
+
+// we assume blockquotes have their own margins, so all blockquotes
+// will remove margins from first (top) and last (bottom) child elements
+blockquote > *:first-child {
+  margin-top: 0 !important;
+}
+blockquote > *:last-child {
+  margin-bottom: 0 !important;
 }
 
 .quote-controls {
   float: right;
-  color: #323232;
+  color: $primary;
   a {
   margin: 0;
   }
@@ -449,7 +503,7 @@ blockquote {
     .quote-other-topic:before {
     display: inline-block;
     margin-left: 8px;
-    color: #323232;
+    color: $primary;
     font-family: "FontAwesome";
     position: relative;
     z-index: 20;
@@ -464,9 +518,9 @@ blockquote {
 
 
 .quote .title {
-  border-left: 5px solid #bebebe;
-  background-color: #f1f1f1;
-  padding: 10px 10px 0 12px;
+  border-left: 5px solid scale-color($primary, $lightness: 75%);
+  background-color: scale-color-diff();
+  padding: 10px 10px 10px 12px;
   clear: both;
   .avatar { margin-right: 7px; }
 }
@@ -474,4 +528,53 @@ blockquote {
 .gutter { display: none; }
 
 .posts-wrapper {  position: relative;
+}
+
+.topic-body.highlighted {
+  background-color: scale-color($tertiary, $lightness: 75%);
+}
+
+span.highlighted {
+  background-color: scale-color($highlight, $lightness: 70%);
+}
+
+.topic-avatar {
+  float: left;
+  position: relative;
+  z-index: 2;
+}
+
+.topic-meta-data {
+  white-space: nowrap;
+  position: absolute;
+  z-index: 1;
+  width: 100%;
+  .names {
+    margin: 5px 0 0 65px;
+    line-height: 17px;
+    span {
+      display: block;
+    }
+  }
+  .post-info {
+    float: right;
+    font-size: 12px;
+    margin: 4px 10px 0 0;
+    .edits { margin-right: 5px; }
+  }
+}
+
+.username.new-user a {
+  color: scale-color($primary, $lightness: 70%);
+}
+
+.user-title {
+  color: #aaa;
+  padding-top: 2px;
+  overflow: hidden;
+  margin-right: 50px;
+}
+
+.read-state {
+  display: none;
 }

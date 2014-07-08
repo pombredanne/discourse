@@ -1,7 +1,7 @@
 Discourse::Application.configure do
   # Settings specified here will take precedence over those in config/application.rb
 
-  config.eager_load = true if rails4?
+  config.eager_load = true
 
   # Code is not reloaded between requests
   config.cache_classes = true
@@ -19,7 +19,7 @@ Discourse::Application.configure do
   config.assets.compress = true
 
   # stuff should be pre-compiled, allow compilation to make life easier
-  config.assets.compile = false
+  config.assets.compile = true
 
   # Generate digests for assets URLs
   config.assets.digest = true
@@ -39,9 +39,6 @@ Discourse::Application.configure do
 
   # precompile handlebar assets
   config.handlebars.precompile = true
-
-  # this setting enable rack_cache so it caches various requests in redis
-  config.enable_rack_cache = false
 
   # allows users to use mini profiler
   config.enable_mini_profiler = false

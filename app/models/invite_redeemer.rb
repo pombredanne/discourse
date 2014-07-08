@@ -2,26 +2,38 @@ InviteRedeemer = Struct.new(:invite) do
 
   def redeem
     Invite.transaction do
-      process_invitation if invite_was_redeemed?
+      if invite_was_redeemed?
+        process_invitation
+        return invited_user
+      end
     end
 
-    invited_user
+    # If `invite_passthrough_hours` is defined, allow them to re-use the invite link
+    # to login again.
+    if invite.redeemed_at >= SiteSetting.invite_passthrough_hours.hours.ago
+      return invited_user
+    end
+
+    nil
   end
 
   # extracted from User cause it is very specific to invites
-  def self.create_user_for_email(email)
-    username = UserNameSuggester.suggest(email)
+  def self.create_user_from_invite(invite)
 
-    DiscourseHub.nickname_operation do
-      match, available, suggestion = DiscourseHub.nickname_match?(username, email)
+    user_exists = User.find_by_email(invite.email)
+    return user if user_exists
+
+    username = UserNameSuggester.suggest(invite.email)
+
+    DiscourseHub.username_operation do
+      match, available, suggestion = DiscourseHub.username_match?(username, invite.email)
       username = suggestion unless match || available
     end
 
-    user = User.new(email: email, username: username, name: username, active: true)
-    user.trust_level = SiteSetting.default_invitee_trust_level
+    user = User.new(email: invite.email, username: username, name: username, active: true, trust_level: SiteSetting.default_invitee_trust_level)
     user.save!
 
-    DiscourseHub.nickname_operation { DiscourseHub.register_nickname(username, email) }
+    DiscourseHub.username_operation { DiscourseHub.register_username(username, invite.email) }
 
     user
   end
@@ -35,6 +47,7 @@ InviteRedeemer = Struct.new(:invite) do
   def process_invitation
     add_to_private_topics_if_invited
     add_user_to_invited_topics
+    add_user_to_groups
     send_welcome_message
     approve_account_if_needed
     notify_invitee
@@ -52,13 +65,13 @@ InviteRedeemer = Struct.new(:invite) do
 
   def get_invited_user
     result = get_existing_user
-    result ||= InviteRedeemer.create_user_for_email(invite.email)
+    result ||= InviteRedeemer.create_user_from_invite(invite)
     result.send_welcome_message = false
     result
   end
 
   def get_existing_user
-    User.where(email: invite.email).first
+    User.find_by(email: invite.email)
   end
 
 
@@ -73,6 +86,12 @@ InviteRedeemer = Struct.new(:invite) do
       i.topics.each do |t|
         t.topic_allowed_users.create(user_id: invited_user.id)
       end
+    end
+  end
+
+  def add_user_to_groups
+    invite.groups.each do |g|
+      invited_user.group_users.create(group_id: g.id)
     end
   end
 

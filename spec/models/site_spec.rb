@@ -6,12 +6,26 @@ describe Site do
     category = Fabricate(:category)
     user = Fabricate(:user)
 
-    Site.new(Guardian.new(user)).categories.count.should == 1
+    Site.new(Guardian.new(user)).categories.count.should == 2
 
     category.set_permissions(:everyone => :create_post)
     category.save
 
-    # TODO clean up querying so we can make sure we have the correct permission set
-    Site.new(Guardian.new(user)).categories[0].permission.should_not == CategoryGroup.permission_types[:full]
+    guardian = Guardian.new(user)
+
+    Site.new(guardian)
+        .categories
+        .keep_if{|c| c.name == category.name}
+        .first
+        .permission
+        .should_not == CategoryGroup.permission_types[:full]
+
+    # If a parent category is not visible, the child categories should not be returned
+    category.set_permissions(:staff => :full)
+    category.save
+
+    sub_category = Fabricate(:category, parent_category_id: category.id)
+    Site.new(guardian).categories.should_not include(sub_category)
   end
+
 end

@@ -69,10 +69,11 @@ Discourse.Dialect.on("parseNode", function(event) {
     if (Discourse && Discourse.Onebox) {
       var contents = Discourse.Onebox.lookupCache(node[1].href);
       if (contents) {
-        node[0] = 'raw';
+        node[0] = '__RAW';
         node[1] = contents;
         node.length = 2;
       }
     }
   }
 });
+

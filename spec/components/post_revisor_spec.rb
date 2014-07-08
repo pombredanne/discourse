@@ -14,40 +14,25 @@ describe PostRevisor do
     subject { described_class.new(post) }
 
     describe 'with the same body' do
-
-      it 'returns false' do
-        subject.revise!(post.user, post.raw).should be_false
+      it "doesn't change version" do
+        lambda {
+          subject.revise!(post.user, post.raw).should be_false
+          post.reload
+        }.should_not change(post, :version)
       end
-
-      it "doesn't change cached_version" do
-        lambda { subject.revise!(post.user, post.raw); post.reload }.should_not change(post, :cached_version)
-      end
-
     end
 
     describe 'ninja editing' do
-      before do
-        SiteSetting.expects(:ninja_edit_window).returns(1.minute.to_i)
+      it 'correctly applies edits' do
+        SiteSetting.ninja_edit_window = 1.minute.to_i
         subject.revise!(post.user, 'updated body', revised_at: post.updated_at + 10.seconds)
         post.reload
-      end
 
-      it 'does not update cached_version' do
-        post.cached_version.should == 1
-      end
-
-      it 'does not create a new version' do
-        post.all_versions.size.should == 1
-      end
-
-      it "doesn't change the last_version_at" do
+        post.version.should == 1
+        post.revisions.size.should == 0
         post.last_version_at.should == first_version_at
-      end
-
-      it "doesn't update a category" do
         subject.category_changed.should be_blank
       end
-
     end
 
     describe 'revision much later' do
@@ -64,12 +49,12 @@ describe PostRevisor do
         subject.category_changed.should be_blank
       end
 
-      it 'updates the cached_version' do
-        post.cached_version.should == 2
+      it 'updates the version' do
+        post.version.should == 2
       end
 
       it 'creates a new version' do
-        post.all_versions.size.should == 2
+        post.revisions.size.should == 1
       end
 
       it "updates the last_version_at" do
@@ -84,7 +69,7 @@ describe PostRevisor do
         end
 
         it "doesn't create a new version if you do another" do
-          post.cached_version.should == 2
+          post.version.should == 2
         end
 
         it "doesn't change last_version_at" do
@@ -105,7 +90,7 @@ describe PostRevisor do
           end
 
           it "does create a new version after the edit window" do
-            post.cached_version.should == 3
+            post.version.should == 3
           end
 
           it "does create a new version after the edit window" do
@@ -190,22 +175,31 @@ describe PostRevisor do
       let(:changed_by) { Fabricate(:admin) }
 
       before do
-        SiteSetting.stubs(:too_many_images).returns(0)
-        subject.revise!(changed_by, "So, post them here!\nhttp://i.imgur.com/FGg7Vzu.gif")
+        SiteSetting.stubs(:newuser_max_images).returns(0)
+        url = "http://i.imgur.com/wfn7rgU.jpg"
+        Oneboxer.stubs(:onebox).with(url, anything).returns("<img src='#{url}'>")
+        subject.revise!(changed_by, "So, post them here!\n#{url}")
       end
 
       it "allows an admin to insert images into a new user's post" do
         post.errors.should be_blank
       end
+
+      it "marks the admin as the last updater" do
+        post.last_editor_id.should == changed_by.id
+      end
+
     end
 
     describe "new user editing their own post" do
       before do
-        SiteSetting.stubs(:too_many_images).returns(0)
-        subject.revise!(post.user, "So, post them here!\nhttp://i.imgur.com/FGg7Vzu.gif")
+        SiteSetting.stubs(:newuser_max_images).returns(0)
+        url = "http://i.imgur.com/FGg7Vzu.gif"
+        Oneboxer.stubs(:cached_onebox).with(url, anything).returns("<img src='#{url}'>")
+        subject.revise!(post.user, "So, post them here!\n#{url}")
       end
 
-      it "allows an admin to insert images into a new user's post" do
+      it "doesn't allow images to be inserted" do
         post.errors.should be_present
       end
 
@@ -214,34 +208,36 @@ describe PostRevisor do
 
     describe 'with a new body' do
       let(:changed_by) { Fabricate(:coding_horror) }
-      let!(:result) { subject.revise!(changed_by, 'updated body') }
+      let!(:result) { subject.revise!(changed_by, "lets update the body") }
 
       it 'returns true' do
         result.should be_true
       end
 
       it 'updates the body' do
-        post.raw.should == 'updated body'
+        post.raw.should == "lets update the body"
       end
 
       it 'sets the invalidate oneboxes attribute' do
         post.invalidate_oneboxes.should == true
       end
 
-      it 'increased the cached_version' do
-        post.cached_version.should == 2
+      it 'increased the version' do
+        post.version.should == 2
       end
 
-      it 'has the new version in all_versions' do
-        post.all_versions.size.should == 2
+      it 'has the new revision' do
+        post.revisions.size.should == 1
       end
 
-      it 'has versions' do
-        post.versions.should be_present
+      it "saved the user who made the change in the revisions" do
+        post.revisions.first.user_id.should == changed_by.id
       end
 
-      it "saved the user who made the change in the version" do
-        post.versions.first.user.should be_present
+      it "updates the word count" do
+        post.word_count.should == 4
+        post.topic.reload
+        post.topic.word_count.should == 4
       end
 
       context 'second poster posts again quickly' do
@@ -252,12 +248,28 @@ describe PostRevisor do
         end
 
         it 'is a ninja edit, because the second poster posted again quickly' do
-          post.cached_version.should == 2
+          post.version.should == 2
         end
 
         it 'is a ninja edit, because the second poster posted again quickly' do
-          post.all_versions.size.should == 2
+          post.revisions.size.should == 1
         end
+      end
+    end
+
+    describe "topic excerpt" do
+      it "topic excerpt is updated only if first post is revised" do
+        revisor = described_class.new(post)
+        first_post = topic.posts.by_post_number.first
+        expect {
+          revisor.revise!(first_post.user, 'Edit the first post', revised_at: first_post.updated_at + 10.seconds)
+          topic.reload
+        }.to change { topic.excerpt }
+        second_post = Fabricate(:post, post_args.merge(post_number: 2, topic_id: topic.id))
+        expect {
+          described_class.new(second_post).revise!(second_post.user, 'Edit the 2nd post')
+          topic.reload
+        }.to_not change { topic.excerpt }
       end
     end
   end

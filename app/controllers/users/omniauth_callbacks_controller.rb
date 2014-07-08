@@ -8,11 +8,10 @@ class Users::OmniauthCallbacksController < ApplicationController
   BUILTIN_AUTH = [
     Auth::FacebookAuthenticator.new,
     Auth::OpenIdAuthenticator.new("google", "https://www.google.com/accounts/o8/id", trusted: true),
+    Auth::GoogleOAuth2Authenticator.new,
     Auth::OpenIdAuthenticator.new("yahoo", "https://me.yahoo.com", trusted: true),
     Auth::GithubAuthenticator.new,
-    Auth::TwitterAuthenticator.new,
-    Auth::PersonaAuthenticator.new,
-    Auth::CasAuthenticator.new
+    Auth::TwitterAuthenticator.new
   ]
 
   skip_before_filter :redirect_to_login_if_required
@@ -32,6 +31,7 @@ class Users::OmniauthCallbacksController < ApplicationController
 
   def complete
     auth = request.env["omniauth.auth"]
+    auth[:session] = session
 
     authenticator = self.class.find_authenticator(params[:provider])
 
@@ -62,16 +62,12 @@ class Users::OmniauthCallbacksController < ApplicationController
     BUILTIN_AUTH.each do |authenticator|
       if authenticator.name == name
         raise Discourse::InvalidAccess.new("provider is not enabled") unless SiteSetting.send("enable_#{name}_logins?")
-
         return authenticator
       end
     end
 
     Discourse.auth_providers.each do |provider|
-      if provider.name == name
-
-        return provider.authenticator
-      end
+      return provider.authenticator if provider.name == name
     end
 
     raise Discourse::InvalidAccess.new("provider is not found")
@@ -88,8 +84,8 @@ class Users::OmniauthCallbacksController < ApplicationController
     # log on any account that is active with forum access
     if Guardian.new(user).can_access_forum? && user.active
       log_on_user(user)
-      # don't carry around old auth info, perhaps move elsewhere
-      session[:authentication] = nil
+      Invite.invalidate_for_email(user.email) # invite link can't be used to log in anymore
+      session[:authentication] = nil # don't carry around old auth info, perhaps move elsewhere
       @data.authenticated = true
     else
       if SiteSetting.must_approve_users? && !user.approved?

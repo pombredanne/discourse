@@ -1,12 +1,5 @@
+/* exported exists, count, present, blank, containsInstance, not */
 // Test helpers
-// var resolvingPromise = Ember.Deferred.promise(function (p) {
-//   p.resolve();
-// });
-
-// var resolvingPromiseWith = function(result) {
-//   return Ember.Deferred.promise(function (p) { p.resolve(result); });
-// };
-
 function exists(selector) {
   return !!count(selector);
 }
@@ -25,4 +18,8 @@ function blank(obj, text) {
 
 function containsInstance(collection, klass, text) {
   ok(klass.detectInstance(_.first(collection)), text);
+}
+
+function not(state, message) {
+  ok(!state, message);
 }

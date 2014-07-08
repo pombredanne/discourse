@@ -23,8 +23,17 @@ Discourse.FlaggedPost = Discourse.Post.extend({
     r = [];
     _.each(this.post_actions, function(action) {
       var user = _this.userLookup[action.user_id];
+      var deletedBy = null;
+      if(action.deleted_by_id){
+        deletedBy = _this.userLookup[action.deleted_by_id];
+      }
+
       var flagType = I18n.t('admin.flags.summary.action_type_' + action.post_action_type_id, {count: 1});
-      r.push({user: user, flagType: flagType, flaggedAt: action.created_at});
+
+      r.push({
+        user: user, flagType: flagType, flaggedAt: action.created_at, deletedBy: deletedBy,
+        tookAction: action.staff_took_action, deletedAt: action.deleted_at
+      });
     });
     return r;
   }.property(),
@@ -38,7 +47,8 @@ Discourse.FlaggedPost = Discourse.Post.extend({
         r.push({
           user: _this.userLookup[action.user_id],
           message: action.message,
-          permalink: action.permalink
+          permalink: action.permalink,
+          bySystemUser: (action.user_id === -1 ? true : false)
         });
       }
     });
@@ -60,6 +70,14 @@ Discourse.FlaggedPost = Discourse.Post.extend({
   flaggedForSpam: function() {
     return !_.every(this.get('post_actions'), function(action) { return action.name_key !== 'spam'; });
   }.property('post_actions.@each.name_key'),
+
+  topicFlagged: function() {
+    return _.any(this.get('post_actions'), function(action) { return action.targets_topic; });
+  }.property('post_actions.@each.targets_topic'),
+
+  postAuthorFlagged: function() {
+    return _.any(this.get('post_actions'), function(action) { return !action.targets_topic; });
+  }.property('post_actions.@each.targets_topic'),
 
   canDeleteAsSpammer: function() {
     return (Discourse.User.currentProp('staff') && this.get('flaggedForSpam') && this.get('user.can_delete_all_posts') && this.get('user.can_be_deleted'));

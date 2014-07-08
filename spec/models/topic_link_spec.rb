@@ -26,19 +26,25 @@ describe TopicLink do
 
   describe 'external links' do
     before do
-      @post = Fabricate(:post_with_external_links, user: @user, topic: @topic)
+      @post = Fabricate(:post, raw: "
+http://a.com/
+http://b.com/b
+http://#{'a'*200}.com/invalid
+http://b.com/#{'a'*500}
+                        ", user: @user, topic: @topic)
+
       TopicLink.extract_from(@post)
     end
 
     it 'works' do
       # has the forum topic links
-      @topic.topic_links.count.should == 4
+      @topic.topic_links.count.should == 2
 
       # works with markdown links
-      @topic.topic_links.exists?(url: "http://forumwarz.com").should be_true
+      @topic.topic_links.exists?(url: "http://a.com/").should be_true
 
       #works with markdown links followed by a period
-      @topic.topic_links.exists?(url: "http://www.codinghorror.com/blog").should be_true
+      @topic.topic_links.exists?(url: "http://b.com/b").should be_true
     end
 
   end
@@ -53,9 +59,10 @@ describe TopicLink do
         @other_post = @other_topic.posts.create(user: @user, raw: "some content for the second post")
 
         @url = "http://#{test_uri.host}/t/#{@other_topic.slug}/#{@other_topic.id}/#{@other_post.post_number}"
+        @invalid_url = "http://#{test_uri.host}/t/#{@other_topic.slug}/9999999999999999999999999999999"
 
         @topic.posts.create(user: @user, raw: 'initial post')
-        @post = @topic.posts.create(user: @user, raw: "Link to another topic:\n\n#{@url}\n\n")
+        @post = @topic.posts.create(user: @user, raw: "Link to another topic:\n\n#{@url}\n\n#{@invalid_url}")
         @post.reload
 
         TopicLink.extract_from(@post)
@@ -253,7 +260,7 @@ describe TopicLink do
     end
   end
 
-  describe 'counts_for and topic_summary' do
+  describe 'counts_for and topic_map' do
     it 'returns blank without posts' do
       TopicLink.counts_for(Guardian.new, nil, nil).should be_blank
     end
@@ -279,7 +286,7 @@ describe TopicLink do
         counts_for[post.id].find {|l| l[:url] == 'http://google.com'}[:clicks].should == 0
         counts_for[post.id].first[:clicks].should == 1
 
-        array = TopicLink.topic_summary(Guardian.new, post.topic_id)
+        array = TopicLink.topic_map(Guardian.new, post.topic_id)
         array.length.should == 4
         array[0]["clicks"].should == "1"
       end
@@ -292,7 +299,7 @@ describe TopicLink do
         post = Fabricate(:post, raw: "hello test topic #{url}")
         TopicLink.extract_from(post)
 
-        TopicLink.topic_summary(Guardian.new, post.topic_id).count.should == 1
+        TopicLink.topic_map(Guardian.new, post.topic_id).count.should == 1
         TopicLink.counts_for(Guardian.new, post.topic, [post]).length.should == 1
 
         category.set_permissions(:staff => :full)
@@ -300,8 +307,8 @@ describe TopicLink do
 
         admin = Fabricate(:admin)
 
-        TopicLink.topic_summary(Guardian.new, post.topic_id).count.should == 0
-        TopicLink.topic_summary(Guardian.new(admin), post.topic_id).count.should == 1
+        TopicLink.topic_map(Guardian.new, post.topic_id).count.should == 0
+        TopicLink.topic_map(Guardian.new(admin), post.topic_id).count.should == 1
 
         TopicLink.counts_for(Guardian.new, post.topic, [post]).length.should == 0
         TopicLink.counts_for(Guardian.new(admin), post.topic, [post]).length.should == 1

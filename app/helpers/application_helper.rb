@@ -4,11 +4,23 @@ require_dependency 'guardian'
 require_dependency 'unread'
 require_dependency 'age_words'
 require_dependency 'configurable_urls'
+require_dependency 'mobile_detection'
 
 module ApplicationHelper
   include CurrentUser
   include CanonicalURL::Helpers
   include ConfigurableUrls
+
+  def script(*args)
+    if SiteSetting.enable_cdn_js_debugging && GlobalSetting.cdn_url
+      tags = javascript_include_tag(*args, "crossorigin" => "anonymous")
+      tags.gsub!("/assets/", "/cdn_asset/#{Discourse.current_hostname.gsub(".","_")}/")
+      tags.gsub!(".js\"", ".js?origin=#{CGI.escape request.base_url}\"")
+      tags.html_safe
+    else
+      javascript_include_tag(*args)
+    end
+  end
 
   def discourse_csrf_tags
     # anon can not have a CSRF token cause these are all pages
@@ -25,7 +37,7 @@ module ApplicationHelper
 
   def escape_unicode(javascript)
     if javascript
-      javascript = javascript.dup.force_encoding("utf-8")
+      javascript = javascript.scrub
       javascript.gsub!(/\342\200\250/u, '&#x2028;')
       javascript.gsub!(/(<\/)/u, '\u003C/')
       javascript.html_safe
@@ -85,10 +97,6 @@ module ApplicationHelper
       end
     end
 
-    # Add workaround tag for old crawlers which ignores <noscript>
-    # (see https://developers.google.com/webmasters/ajax-crawling/docs/specification)
-    result << tag('meta', name: "fragment", content: "!") if SiteSetting.enable_escaped_fragments
-
     result
   end
 
@@ -105,20 +113,20 @@ module ApplicationHelper
   end
 
   def login_path
-    return "#{Discourse::base_uri}/login"
+    "#{Discourse::base_uri}/login"
   end
 
   def mobile_view?
-    return false unless SiteSetting.enable_mobile_theme
-    if session[:mobile_view]
-      session[:mobile_view] == '1'
-    else
-      mobile_device?
-    end
+    MobileDetection.resolve_mobile_view!(request.user_agent,params,session)
   end
 
   def mobile_device?
-    # TODO: this is dumb. user agent matching is a doomed approach. a better solution is coming.
-    request.user_agent =~ /Mobile|webOS|Nexus 7/ and !(request.user_agent =~ /iPad/)
+    MobileDetection.mobile_device?(request.user_agent)
   end
+
+  def customization_disabled?
+    controller.class.name.split("::").first == "Admin" || session[:disable_customization]
+  end
+
+
 end

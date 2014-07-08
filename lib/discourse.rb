@@ -4,6 +4,22 @@ require_dependency 'auth/default_current_user_provider'
 
 module Discourse
 
+  require 'sidekiq/exception_handler'
+  class SidekiqExceptionHandler
+    extend Sidekiq::ExceptionHandler
+  end
+
+  def self.handle_exception(ex, context=nil, parent_logger = nil)
+    context ||= {}
+    parent_logger ||= SidekiqExceptionHandler
+
+    cm = RailsMultisite::ConnectionManagement
+    parent_logger.handle_exception(ex, {
+      current_db: cm.current_db,
+      current_hostname: cm.current_hostname
+    }.merge(context))
+  end
+
   # Expected less matches than what we got in a find
   class TooManyMatches < Exception; end
 
@@ -22,18 +38,58 @@ module Discourse
   # When a setting is missing
   class SiteSettingMissing < Exception; end
 
+  # When ImageMagick is missing
+  class ImageMagickMissing < Exception; end
+
+  class InvalidPost < Exception; end
+
+  # When read-only mode is enabled
+  class ReadOnly < Exception; end
+
   # Cross site request forgery
   class CSRF < Exception; end
 
+  def self.filters
+    @filters ||= [:latest, :unread, :new, :starred, :read, :posted]
+  end
+
+  def self.anonymous_filters
+    @anonymous_filters ||= [:latest]
+  end
+
+  def self.logged_in_filters
+    @logged_in_filters ||= Discourse.filters - Discourse.anonymous_filters
+  end
+
+  def self.top_menu_items
+    @top_menu_items ||= Discourse.filters + [:category, :categories, :top]
+  end
+
+  def self.anonymous_top_menu_items
+    @anonymous_top_menu_items ||= Discourse.anonymous_filters + [:category, :categories, :top]
+  end
+
   def self.activate_plugins!
     @plugins = Plugin::Instance.find_all("#{Rails.root}/plugins")
-    @plugins.each do |plugin|
-      plugin.activate!
-    end
+    @plugins.each { |plugin| plugin.activate! }
   end
 
   def self.plugins
     @plugins
+  end
+
+  def self.assets_digest
+    @assets_digest ||= begin
+      digest = Digest::MD5.hexdigest(ActionView::Base.assets_manifest.assets.values.sort.join)
+
+      channel = "/global/asset-version"
+      message = MessageBus.last_message(channel)
+
+      unless message && message.data == digest
+        MessageBus.publish channel, digest
+      end
+      digest
+    end
   end
 
   def self.authenticators
@@ -72,11 +128,11 @@ module Discourse
     end
   end
 
-  def self.base_uri default_value=""
+  def self.base_uri(default_value = "")
     if !ActionController::Base.config.relative_url_root.blank?
-      return ActionController::Base.config.relative_url_root
+      ActionController::Base.config.relative_url_root
     else
-      return default_value
+      default_value
     end
   end
 
@@ -84,7 +140,7 @@ module Discourse
     default_port = 80
     protocol = "http"
 
-    if SiteSetting.use_ssl?
+    if SiteSetting.use_https?
       protocol = "https"
       default_port = 443
     end
@@ -101,18 +157,28 @@ module Discourse
     return base_url_no_prefix + base_uri
   end
 
-  def self.enable_maintenance_mode
-    $redis.set maintenance_mode_key, 1
+  def self.enable_readonly_mode
+    $redis.set readonly_mode_key, 1
+    MessageBus.publish(readonly_channel, true)
     true
   end
 
-  def self.disable_maintenance_mode
-    $redis.del maintenance_mode_key
+  def self.disable_readonly_mode
+    $redis.del readonly_mode_key
+    MessageBus.publish(readonly_channel, false)
     true
   end
 
-  def self.maintenance_mode?
-    !!$redis.get( maintenance_mode_key )
+  def self.readonly_mode?
+    !!$redis.get(readonly_mode_key)
+  end
+
+  def self.request_refresh!
+    # Causes refresh on next click for all clients
+    #
+    # This is better than `MessageBus.publish "/file-change", ["refresh"]` because
+    # it spreads the refreshes out over a time period
+    MessageBus.publish '/global/asset-version', 'clobber'
   end
 
   def self.git_version
@@ -131,21 +197,23 @@ module Discourse
 
   # Either returns the site_contact_username user or the first admin.
   def self.site_contact_user
-    user = User.where(username_lower: SiteSetting.site_contact_username).first if SiteSetting.site_contact_username.present?
+    user = User.find_by(username_lower: SiteSetting.site_contact_username.downcase) if SiteSetting.site_contact_username.present?
     user ||= User.admins.real.order(:id).first
   end
 
+  SYSTEM_USER_ID = -1 unless defined? SYSTEM_USER_ID
+
   def self.system_user
-    User.where(id: -1).first
+    User.find_by(id: SYSTEM_USER_ID)
   end
 
   def self.store
     if SiteSetting.enable_s3_uploads?
       @s3_store_loaded ||= require 'file_store/s3_store'
-      S3Store.new
+      FileStore::S3Store.new
     else
       @local_store_loaded ||= require 'file_store/local_store'
-      LocalStore.new
+      FileStore::LocalStore.new
     end
   end
 
@@ -157,9 +225,38 @@ module Discourse
     @current_user_provider = val
   end
 
-private
-
-  def self.maintenance_mode_key
-    'maintenance_mode'
+  def self.asset_host
+    Rails.configuration.action_controller.asset_host
   end
+
+  def self.readonly_mode_key
+    "readonly_mode"
+  end
+
+  def self.readonly_channel
+    "/site/read-only"
+  end
+
+  # all forking servers must call this
+  # after fork, otherwise Discourse will be
+  # in a bad state
+  def self.after_fork
+    current_db = RailsMultisite::ConnectionManagement.current_db
+    RailsMultisite::ConnectionManagement.establish_connection(db: current_db)
+    MessageBus.after_fork
+    SiteSetting.after_fork
+    $redis.client.reconnect
+    Rails.cache.reconnect
+    Logster.store.redis.reconnect
+    # shuts down all connections in the pool
+    Sidekiq.redis_pool.shutdown{|c| nil}
+    # re-establish
+    Sidekiq.redis = sidekiq_redis_config
+    nil
+  end
+
+  def self.sidekiq_redis_config
+    { url: $redis.url, namespace: 'sidekiq' }
+  end
+
 end

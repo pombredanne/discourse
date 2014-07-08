@@ -15,10 +15,11 @@ class AdminUserSerializer < BasicUserSerializer
              :avatar_template,
              :can_approve,
              :approved,
-             :banned_at,
-             :banned_till,
-             :is_banned,
+             :suspended_at,
+             :suspended_till,
+             :suspended,
              :ip_address,
+             :registration_ip_address,
              :can_send_activation_email,
              :can_activate,
              :can_deactivate,
@@ -32,8 +33,8 @@ class AdminUserSerializer < BasicUserSerializer
     end
   end
 
-  def is_banned
-    object.is_banned?
+  def suspended
+    object.suspended?
   end
 
   def can_impersonate
@@ -81,6 +82,14 @@ class AdminUserSerializer < BasicUserSerializer
 
   def can_deactivate
     scope.can_deactivate?(object)
+  end
+
+  def ip_address
+    object.ip_address.try(:to_s)
+  end
+
+  def registration_ip_address
+    object.registration_ip_address.try(:to_s)
   end
 
 end

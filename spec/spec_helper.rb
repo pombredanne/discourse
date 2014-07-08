@@ -5,6 +5,7 @@ end
 
 require 'rubygems'
 require 'spork'
+require 'rbtrace'
 #uncomment the following line to use spork with the debugger
 #require 'spork/ext/ruby-debug'
 
@@ -32,6 +33,9 @@ Spork.prefork do
 
   # let's not run seed_fu every test
   SeedFu.quiet = true if SeedFu.respond_to? :quiet
+
+  SiteSetting.enable_system_avatars = false
+  SiteSetting.automatically_download_gravatars = false
   SeedFu.seed
 
   RSpec.configure do |config|
@@ -51,16 +55,40 @@ Spork.prefork do
     # rspec-rails.
     config.infer_base_class_for_anonymous_controllers = true
 
-    # if we need stuff post fork, pre tests run here
-    # config.before(:suite) do
-    # end
+    config.before(:suite) do
 
-    config.before do
+      # Ugly, but needed until we have a user creator
+      User.skip_callback(:create, :after, :ensure_in_trust_level_group)
+
+      DiscoursePluginRegistry.clear if ENV['LOAD_PLUGINS'] != "1"
+      Discourse.current_user_provider = TestCurrentUserProvider
+
+      SiteSetting.refresh!
+
+      # Rebase defaults
+      #
+      # We nuke the DB storage provider from site settings, so need to yank out the existing settings
+      #  and pretend they are default.
+      # There are a bunch of settings that are seeded, they must be loaded as defaults
+      SiteSetting.current.each do |k,v|
+        SiteSetting.defaults[k] = v
+      end
+
+      require_dependency 'site_settings/local_process_provider'
+      SiteSetting.provider = SiteSettings::LocalProcessProvider.new
+    end
+
+    config.before :each do |x|
       # disable all observers, enable as needed during specs
       ActiveRecord::Base.observers.disable :all
       SiteSetting.provider.all.each do |setting|
         SiteSetting.remove_override!(setting.name)
       end
+
+      # very expensive IO operations
+      SiteSetting.enable_system_avatars = false
+      SiteSetting.automatically_download_gravatars = false
+
     end
 
     class TestCurrentUserProvider < Auth::DefaultCurrentUserProvider
@@ -75,14 +103,6 @@ Spork.prefork do
       end
     end
 
-    config.before(:all) do
-      DiscoursePluginRegistry.clear
-      Discourse.current_user_provider = TestCurrentUserProvider
-
-      require_dependency 'site_settings/local_process_provider'
-      SiteSetting.provider = SiteSettings::LocalProcessProvider.new
-    end
-
   end
 
   def freeze_time(now=Time.now)
@@ -94,9 +114,7 @@ end
 
 Spork.each_run do
   # This code will be run each time you run your specs.
-  $redis.client.reconnect
-  Rails.cache.reconnect
-  MessageBus.after_fork
+  Discourse.after_fork
 end
 
 # --- Instructions ---

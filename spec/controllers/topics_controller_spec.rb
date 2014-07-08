@@ -24,7 +24,7 @@ describe TopicsController do
       post = json['posts'][0]
       post['id'].should == p2.id
       post['username'].should == user.username
-      post['avatar_template'].should == user.avatar_template
+      post['avatar_template'].should == "#{Discourse.base_url_no_prefix}#{user.avatar_template}"
       post['name'].should == user.name
       post['created_at'].should be_present
       post['cooked'].should == p2.cooked
@@ -34,7 +34,7 @@ describe TopicsController do
       participant = json['participants'][0]
       participant['id'].should == user.id
       participant['username'].should == user.username
-      participant['avatar_template'].should == user.avatar_template
+      participant['avatar_template'].should == "#{Discourse.base_url_no_prefix}#{user.avatar_template}"
     end
   end
 
@@ -62,8 +62,8 @@ describe TopicsController do
         let(:p2) { Fabricate(:post, user: user) }
 
         before do
-          Topic.any_instance.expects(:move_posts).with(user, [p2.id], title: 'blah').returns(topic)
-          xhr :post, :move_posts, topic_id: topic.id, title: 'blah', post_ids: [p2.id]
+          Topic.any_instance.expects(:move_posts).with(user, [p2.id], title: 'blah', category_id: 123).returns(topic)
+          xhr :post, :move_posts, topic_id: topic.id, title: 'blah', post_ids: [p2.id], category_id: 123
         end
 
         it "returns success" do
@@ -193,6 +193,73 @@ describe TopicsController do
 
     end
 
+  end
+
+  context 'change_post_owners' do
+    it 'needs you to be logged in' do
+      lambda { xhr :post, :change_post_owners, topic_id: 111, username: 'user_a', post_ids: [1,2,3] }.should raise_error(Discourse::NotLoggedIn)
+    end
+
+    describe 'forbidden to moderators' do
+      let!(:moderator) { log_in(:moderator) }
+      it 'correctly denies' do
+        xhr :post, :change_post_owners, topic_id: 111, username: 'user_a', post_ids: [1,2,3]
+        response.should be_forbidden
+      end
+    end
+
+    describe 'forbidden to elders' do
+      let!(:elder) { log_in(:elder) }
+
+      it 'correctly denies' do
+        xhr :post, :change_post_owners, topic_id: 111, username: 'user_a', post_ids: [1,2,3]
+        response.should be_forbidden
+      end
+    end
+
+    describe 'changing ownership' do
+      let!(:editor) { log_in(:admin) }
+      let(:topic) { Fabricate(:topic) }
+      let(:user_a) { Fabricate(:user) }
+      let(:p1) { Fabricate(:post, topic_id: topic.id) }
+
+      it "raises an error with a parameter missing" do
+        lambda { xhr :post, :change_post_owners, topic_id: 111, post_ids: [1,2,3] }.should raise_error(ActionController::ParameterMissing)
+        lambda { xhr :post, :change_post_owners, topic_id: 111, username: 'user_a' }.should raise_error(ActionController::ParameterMissing)
+      end
+
+      it "calls PostRevisor" do
+        PostRevisor.any_instance.expects(:revise!)
+        xhr :post, :change_post_owners, topic_id: topic.id, username: user_a.username_lower, post_ids: [p1.id]
+        response.should be_success
+      end
+
+      it "changes the user" do
+        old_user = p1.user
+        xhr :post, :change_post_owners, topic_id: topic.id, username: user_a.username_lower, post_ids: [p1.id]
+        p1.reload
+        old_user.should_not == p1.user
+      end
+
+      # Make sure that p1.reload isn't changing the user for us
+      it "is not an artifact of the framework" do
+        old_user = p1.user
+        # xhr :post, :change_post_owners, topic_id: topic.id, username: user_a.username_lower, post_ids: [p1.id]
+        p1.reload
+        p1.user.should_not == nil
+        old_user.should == p1.user
+      end
+
+      let(:p2) { Fabricate(:post, topic_id: topic.id) }
+
+      it "changes multiple posts" do
+        xhr :post, :change_post_owners, topic_id: topic.id, username: user_a.username_lower, post_ids: [p1.id, p2.id]
+        p1.reload
+        p2.reload
+        p1.user.should_not == nil
+        p1.user.should == p2.user
+      end
+    end
   end
 
   context 'similar_to' do
@@ -345,7 +412,7 @@ describe TopicsController do
       end
 
       it 'deletes the forum topic user record' do
-        PostTiming.expects(:destroy_for).with(@user.id, @topic.id)
+        PostTiming.expects(:destroy_for).with(@user.id, [@topic.id])
         xhr :delete, :destroy_timings, topic_id: @topic.id
       end
 
@@ -571,7 +638,7 @@ describe TopicsController do
     end
 
     context "when 'login required' site setting has been enabled" do
-      before { SiteSetting.stubs(:login_required?).returns(true) }
+      before { SiteSetting.login_required = true }
 
       context 'and the user is logged in' do
         before { log_in(:coding_horror) }
@@ -583,9 +650,24 @@ describe TopicsController do
       end
 
       context 'and the user is not logged in' do
+        let(:api_key) { topic.user.generate_api_key(topic.user) }
+
         it 'redirects to the login page' do
           get :show, topic_id: topic.id, slug: topic.slug
           expect(response).to redirect_to login_path
+        end
+
+        it 'shows the topic if valid api key is provided' do
+          get :show, topic_id: topic.id, slug: topic.slug, api_key: api_key.key
+          expect(response).to be_successful
+          topic.reload
+          # free test, only costs a reload
+          topic.views.should == 1
+        end
+
+        it 'returns 403 for an invalid key' do
+          get :show, topic_id: topic.id, slug: topic.slug, api_key: "bad"
+          expect(response.code.to_i).to be(403)
         end
       end
     end
@@ -669,6 +751,24 @@ describe TopicsController do
   end
 
   describe 'invite' do
+
+    describe "group invites" do
+      it "works correctly" do
+        group = Fabricate(:group)
+        topic = Fabricate(:topic)
+        admin = log_in(:admin)
+
+        xhr :post, :invite, topic_id: topic.id, email: 'hiro@from.heros', group_ids: "#{group.id}"
+
+        response.should be_success
+
+        invite = Invite.find_by(email: 'hiro@from.heros')
+        groups = invite.groups.to_a
+        groups.count.should == 1
+        groups[0].id.should == group.id
+      end
+    end
+
     it "won't allow us to invite toa topic when we're not logged in" do
       lambda { xhr :post, :invite, topic_id: 1, email: 'jake@adventuretime.ooo' }.should raise_error(Discourse::NotLoggedIn)
     end
@@ -684,7 +784,6 @@ describe TopicsController do
 
       describe 'without permission' do
         it "raises an exception when the user doesn't have permission to invite to the topic" do
-          Guardian.any_instance.expects(:can_invite_to?).with(@topic).returns(false)
           xhr :post, :invite, topic_id: @topic.id, user: 'jake@adventuretime.ooo'
           response.should be_forbidden
         end
@@ -692,45 +791,24 @@ describe TopicsController do
 
       describe 'with permission' do
 
-        before do
-          Guardian.any_instance.expects(:can_invite_to?).with(@topic).returns(true)
+        let!(:admin) do
+          log_in :admin
         end
 
-        context 'when it returns an invite' do
-          before do
-            Topic.any_instance.expects(:invite_by_email).with(@topic.user, 'jake@adventuretime.ooo').returns(Invite.new)
-            xhr :post, :invite, topic_id: @topic.id, user: 'jake@adventuretime.ooo'
-          end
-
-          it 'should succeed' do
-            response.should be_success
-          end
-
-          it 'returns success JSON' do
-            ::JSON.parse(response.body).should == {'success' => 'OK'}
-          end
+        it 'should work as expected' do
+          xhr :post, :invite, topic_id: @topic.id, user: 'jake@adventuretime.ooo'
+          response.should be_success
+          ::JSON.parse(response.body).should == {'success' => 'OK'}
+          Invite.where(invited_by_id: admin.id).count.should == 1
         end
 
-        context 'when it fails and returns nil' do
-
-          before do
-            Topic.any_instance.expects(:invite_by_email).with(@topic.user, 'jake@adventuretime.ooo').returns(nil)
-            xhr :post, :invite, topic_id: @topic.id, user: 'jake@adventuretime.ooo'
-          end
-
-          it 'should succeed' do
-            response.should_not be_success
-          end
-
-          it 'returns success JSON' do
-            ::JSON.parse(response.body).should == {'failed' => 'FAILED'}
-          end
-
+        it 'should fail on shoddy email' do
+          xhr :post, :invite, topic_id: @topic.id, user: 'i_am_not_an_email'
+          response.should_not be_success
+          ::JSON.parse(response.body).should == {'failed' => 'FAILED'}
         end
 
       end
-
-
 
     end
 
@@ -739,12 +817,12 @@ describe TopicsController do
   describe 'autoclose' do
 
     it 'needs you to be logged in' do
-      lambda { xhr :put, :autoclose, topic_id: 99, auto_close_days: 3}.should raise_error(Discourse::NotLoggedIn)
+      lambda { xhr :put, :autoclose, topic_id: 99, auto_close_time: '24'}.should raise_error(Discourse::NotLoggedIn)
     end
 
     it 'needs you to be an admin or mod' do
       user = log_in
-      xhr :put, :autoclose, topic_id: 99, auto_close_days: 3
+      xhr :put, :autoclose, topic_id: 99, auto_close_time: '24'
       response.should be_forbidden
     end
 
@@ -755,16 +833,113 @@ describe TopicsController do
       end
 
       it "can set a topic's auto close time" do
-        Topic.any_instance.expects(:set_auto_close).with("3", @admin)
-        xhr :put, :autoclose, topic_id: @topic.id, auto_close_days: 3
+        Topic.any_instance.expects(:set_auto_close).with("24", @admin)
+        xhr :put, :autoclose, topic_id: @topic.id, auto_close_time: '24'
+        json = ::JSON.parse(response.body)
+        json.should have_key('auto_close_at')
       end
 
       it "can remove a topic's auto close time" do
         Topic.any_instance.expects(:set_auto_close).with(nil, anything)
-        xhr :put, :autoclose, topic_id: @topic.id, auto_close_days: nil
+        xhr :put, :autoclose, topic_id: @topic.id, auto_close_time: nil
       end
     end
 
   end
 
+  describe 'make_banner' do
+
+    it 'needs you to be a staff member' do
+      log_in
+      xhr :put, :make_banner, topic_id: 99
+      response.should be_forbidden
+    end
+
+    describe 'when logged in' do
+
+      it "changes the topic archetype to 'banner'" do
+        topic = Fabricate(:topic, user: log_in(:admin))
+        Topic.any_instance.expects(:make_banner!)
+
+        xhr :put, :make_banner, topic_id: topic.id
+        response.should be_success
+      end
+
+    end
+
+  end
+
+  describe 'remove_banner' do
+
+    it 'needs you to be a staff member' do
+      log_in
+      xhr :put, :remove_banner, topic_id: 99
+      response.should be_forbidden
+    end
+
+    describe 'when logged in' do
+
+      it "resets the topic archetype" do
+        topic = Fabricate(:topic, user: log_in(:admin))
+        Topic.any_instance.expects(:remove_banner!)
+
+        xhr :put, :remove_banner, topic_id: topic.id
+        response.should be_success
+      end
+
+    end
+
+  end
+
+  describe "bulk" do
+    it 'needs you to be logged in' do
+      lambda { xhr :put, :bulk }.should raise_error(Discourse::NotLoggedIn)
+    end
+
+    describe "when logged in" do
+      let!(:user) { log_in }
+      let(:operation) { {type: 'change_category', category_id: '1'} }
+      let(:topic_ids) { [1,2,3] }
+
+      it "requires a list of topic_ids or filter" do
+        lambda { xhr :put, :bulk, operation: operation }.should raise_error(ActionController::ParameterMissing)
+      end
+
+      it "requires an operation param" do
+        lambda { xhr :put, :bulk, topic_ids: topic_ids}.should raise_error(ActionController::ParameterMissing)
+      end
+
+      it "requires a type field for the operation param" do
+        lambda { xhr :put, :bulk, topic_ids: topic_ids, operation: {}}.should raise_error(ActionController::ParameterMissing)
+      end
+
+      it "delegates work to `TopicsBulkAction`" do
+        topics_bulk_action = mock
+        TopicsBulkAction.expects(:new).with(user, topic_ids, operation).returns(topics_bulk_action)
+        topics_bulk_action.expects(:perform!)
+        xhr :put, :bulk, topic_ids: topic_ids, operation: operation
+      end
+    end
+  end
+
+
+  describe 'reset_new' do
+    it 'needs you to be logged in' do
+      lambda { xhr :put, :reset_new }.should raise_error(Discourse::NotLoggedIn)
+    end
+
+    let(:user) { log_in(:user) }
+
+    it "updates the `new_since` date" do
+      old_date = 2.years.ago
+
+      user.user_stat.update_column(:new_since, old_date)
+
+      xhr :put, :reset_new
+      user.reload
+      user.user_stat.new_since.to_date.should_not == old_date.to_date
+
+    end
+
+  end
 end

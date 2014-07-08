@@ -164,7 +164,7 @@ describe PostDestroyer do
 
     context 'topic_user' do
 
-      let(:topic_user) { second_user.topic_users.where(topic_id: topic.id).first }
+      let(:topic_user) { second_user.topic_users.find_by(topic_id: topic.id) }
 
       it 'clears the posted flag for the second user' do
         topic_user.posted?.should be_false
@@ -253,13 +253,12 @@ describe PostDestroyer do
   end
 
   context '@mentions' do
-    let!(:evil_trout) { Fabricate(:evil_trout) }
-    let!(:mention_post) { Fabricate(:post, raw: 'Hello @eviltrout')}
-
     it 'removes notifications when deleted' do
+      user = Fabricate(:evil_trout)
+      post = create_post(raw: 'Hello @eviltrout')
       lambda {
-        PostDestroyer.new(Fabricate(:moderator), mention_post).destroy
-      }.should change(evil_trout.notifications, :count).by(-1)
+        PostDestroyer.new(Fabricate(:moderator), post).destroy
+      }.should change(user.notifications, :count).by(-1)
     end
   end
 
@@ -276,8 +275,8 @@ describe PostDestroyer do
     it "should delete the post actions" do
       flag = PostAction.act(codinghorror, second_post, PostActionType.types[:off_topic])
       PostDestroyer.new(moderator, second_post).destroy
-      expect(PostAction.where(id: flag.id).first).to be_nil
-      expect(PostAction.where(id: bookmark.id).first).to be_nil
+      expect(PostAction.find_by(id: flag.id)).to be_nil
+      expect(PostAction.find_by(id: bookmark.id)).to be_nil
     end
 
     it 'should update flag counts on the post' do
@@ -286,6 +285,31 @@ describe PostDestroyer do
       second_post.reload
       expect(second_post.off_topic_count).to eq(0)
       expect(second_post.bookmark_count).to eq(0)
+    end
+  end
+
+  describe "user actions" do
+    let(:codinghorror) { Fabricate(:coding_horror) }
+    let(:second_post) { Fabricate(:post, topic_id: post.topic_id) }
+
+    def create_user_action(action_type)
+      UserAction.log_action!({
+        action_type: action_type,
+        user_id: codinghorror.id,
+        acting_user_id: codinghorror.id,
+        target_topic_id: second_post.topic_id,
+        target_post_id: second_post.id
+      })
+    end
+
+    it "should delete the user actions" do
+      bookmark = create_user_action(UserAction::BOOKMARK)
+      like = create_user_action(UserAction::LIKE)
+
+      PostDestroyer.new(moderator, second_post).destroy
+
+      expect(UserAction.find_by(id: bookmark.id)).to be_nil
+      expect(UserAction.find_by(id: like.id)).to be_nil
     end
   end
 

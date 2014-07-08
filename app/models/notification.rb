@@ -8,7 +8,7 @@ class Notification < ActiveRecord::Base
   validates_presence_of :notification_type
 
   scope :unread, lambda { where(read: false) }
-  scope :recent, lambda { order('created_at desc').limit(10) }
+  scope :recent, lambda {|n=nil| n ||= 10; order('created_at desc').limit(n) }
 
   after_save :refresh_notification_count
   after_destroy :refresh_notification_count
@@ -27,7 +27,8 @@ class Notification < ActiveRecord::Base
   def self.types
     @types ||= Enum.new(
       :mentioned, :replied, :quoted, :edited, :liked, :private_message,
-      :invited_to_private_message, :invitee_accepted, :posted, :moved_post
+      :invited_to_private_message, :invitee_accepted, :posted, :moved_post,
+      :linked, :granted_badge
     )
   end
 
@@ -64,6 +65,12 @@ class Notification < ActiveRecord::Base
     result
   end
 
+  # Clean up any notifications the user can no longer see. For example, if a topic was previously
+  # public then turns private.
+  def self.remove_for(user_id, topic_id)
+    Notification.where(user_id: user_id, topic_id: topic_id).delete_all
+  end
+
   # Be wary of calling this frequently. O(n) JSON parsing can suck.
   def data_hash
     @data_hash ||= begin
@@ -86,19 +93,43 @@ class Notification < ActiveRecord::Base
   def post
     return if topic_id.blank? || post_number.blank?
 
-    Post.where(topic_id: topic_id, post_number: post_number).first
+    Post.find_by(topic_id: topic_id, post_number: post_number)
   end
 
+  def self.recent_report(user, count = nil)
+    count ||= 10
+    notifications = user.notifications.recent(count).includes(:topic).to_a
+
+    if notifications.present?
+      notifications += user.notifications
+        .order('created_at desc')
+        .where(read: false, notification_type: Notification.types[:private_message])
+        .where('id < ?', notifications.last.id)
+        .limit(count)
+
+      notifications.sort do |x,y|
+        if x.unread_pm? && !y.unread_pm?
+          -1
+        elsif y.unread_pm? && !x.unread_pm?
+          1
+        else
+          y.created_at <=> x.created_at
+        end
+      end.take(count)
+    else
+      []
+    end
+
+  end
+
+  def unread_pm?
+    Notification.types[:private_message] == self.notification_type && !read
+  end
 
   protected
 
   def refresh_notification_count
-    user_id = user.id
-    MessageBus.publish("/notification/#{user_id}",
-      {unread_notifications: user.unread_notifications,
-       unread_private_messages: user.unread_private_messages},
-      user_ids: [user_id] # only publish the notification to this user
-    )
+    user.publish_notifications_state
   end
 
 end
@@ -112,8 +143,8 @@ end
 #  user_id           :integer          not null
 #  data              :string(1000)     not null
 #  read              :boolean          default(FALSE), not null
-#  created_at        :datetime         not null
-#  updated_at        :datetime         not null
+#  created_at        :datetime
+#  updated_at        :datetime
 #  topic_id          :integer
 #  post_number       :integer
 #  post_action_id    :integer
@@ -123,4 +154,3 @@ end
 #  index_notifications_on_post_action_id          (post_action_id)
 #  index_notifications_on_user_id_and_created_at  (user_id,created_at)
 #
-
