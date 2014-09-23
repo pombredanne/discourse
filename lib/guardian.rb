@@ -103,12 +103,15 @@ class Guardian
   end
 
   def can_moderate?(obj)
-    obj && authenticated? && (is_staff? || (obj.is_a?(Topic) && @user.has_trust_level?(:elder)))
+    obj && authenticated? && (is_staff? || (obj.is_a?(Topic) && @user.has_trust_level?(TrustLevel[4])))
   end
   alias :can_move_posts? :can_moderate?
   alias :can_see_flags? :can_moderate?
   alias :can_send_activation_email? :can_moderate?
-  alias :can_grant_badges? :can_moderate?
+
+  def can_grant_badges?(_user)
+    SiteSetting.enable_badges && is_staff?
+  end
 
   def can_see_group?(group)
     group.present? && (is_admin? || group.visible?)
@@ -193,7 +196,7 @@ class Guardian
     !SiteSetting.enable_sso &&
     SiteSetting.enable_local_logins &&
     (
-      (!SiteSetting.must_approve_users? && @user.has_trust_level?(:regular)) ||
+      (!SiteSetting.must_approve_users? && @user.has_trust_level?(TrustLevel[2])) ||
       is_staff?
     ) &&
     (groups.blank? || is_admin?)
@@ -210,6 +213,14 @@ class Guardian
     user.admin?
   end
 
+  def can_create_disposable_invite?(user)
+    user.admin?
+  end
+
+  def can_send_multiple_invites?(user)
+    user.staff?
+  end
+
   def can_see_private_messages?(user_id)
     is_admin? || (authenticated? && @user.id == user_id)
   end
@@ -221,7 +232,7 @@ class Guardian
     # Can't send message to yourself
     is_not_me?(target) &&
     # Have to be a basic level at least
-    @user.has_trust_level?(:basic) &&
+    @user.has_trust_level?(TrustLevel[1]) &&
     # PMs are enabled
     (SiteSetting.enable_private_messages ||
       @user.username == SiteSetting.site_contact_username ||

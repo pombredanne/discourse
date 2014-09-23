@@ -18,7 +18,14 @@ export default Ember.ArrayController.extend({
     }
   }.property('saving'),
 
-  selectableUserBadges: Em.computed.filterBy('model', 'badge.allow_title', true),
+  selectableUserBadges: function() {
+    var items = this.get('model').filterBy('badge.allow_title', true);
+    items = _.uniq(items, false, function(e) { return e.get('badge.name'); });
+    items.unshiftObject(Em.Object.create({
+          badge: Discourse.Badge.create({name: I18n.t('badges.no_title')})
+    }));
+    return items;
+  }.property('model'),
 
   selectedUserBadge: function() {
     var selectedUserBadgeId = parseInt(this.get('selectedUserBadgeId'));

@@ -11,6 +11,9 @@
 # type: email    - Must be a valid email address.
 # type: username - Must match the username of an existing user.
 # type: list     - A list of values, chosen from a set of valid values defined in the choices option.
+#
+# A type:list setting with the word 'colors' in its name will make color values have a bold line of the corresponding color
+#
 required:
   title:
     client: true
@@ -42,9 +45,6 @@ required:
     client: true
     default: '/images/default-favicon.ico'
   apple_touch_icon_url: '/images/default-apple-touch-icon.png'
-  company_full_name: 'My Unconfigured Forum Ltd.'
-  company_short_name: 'Unconfigured Forum'
-  company_domain: 'www.example.com'
 
 basic:
   default_locale:
@@ -154,6 +154,7 @@ basic:
   topics_per_page:
     default: 30
     min: 1
+    client: true
   show_subcategory_list:
     default: false
     client: true
@@ -165,7 +166,7 @@ basic:
     client: true
     default: true
 
-users:
+login:
   invite_only:
     client: true
     default: false
@@ -178,27 +179,14 @@ users:
   enable_local_logins:
     client: true
     default: true
-  min_username_length:
+  allow_new_registrations:
     client: true
-    default: 3
-    min: 1
-  max_username_length:
-    client: true
-    default: 20
-    min: 8
-    max: 60
-  min_password_length:
-    client: true
-    default: 8
-    min: 1
-  block_common_passwords: true
-
+    default: true
   # The default value of enable_google_logins changed from true to false.
   # See db/migrate/20140521220115_google_openid_default_has_changed.rb
   enable_google_logins:
     client: true
     default: false
-
   enable_google_oauth2_logins:
     client: true
     default: false
@@ -212,10 +200,10 @@ users:
     default: false
   twitter_consumer_key:
     default: ''
-    regex: "^\\w*$"
+    regex: "^[a-zA-Z0-9_+-]*$"
   twitter_consumer_secret:
     default: ''
-    regex: "^\\w*$"
+    regex: "^[a-zA-Z0-9_+-]*$"
   enable_facebook_logins:
     client: true
     default: false
@@ -242,19 +230,52 @@ users:
   sso_overrides_email: false
   sso_overrides_username: false
   sso_overrides_name: false
-  enforce_global_nicknames: false
-  discourse_org_access_key: ''
+  sso_overrides_avatar:
+    default: false
+    client: true
+  email_domains_blacklist:
+    default: 'mailinator.com'
+    type: list
+  email_domains_whitelist:
+    default: ''
+    type: list
+  forgot_password_strict: false
+
+users:
+  min_username_length:
+    client: true
+    default: 3
+    min: 1
+  max_username_length:
+    client: true
+    default: 20
+    min: 8
+    max: 60
+  min_password_length:
+    client: true
+    default: 8
+    min: 1
+  block_common_passwords: true
+  enforce_global_nicknames:
+    default: false
+    hidden: true
+  discourse_org_access_key:
+    default: ''
+    hidden: true
   username_change_period: 3
   auto_track_topics_after: 240000
   email_editable: true
+  logout_redirect:
+    client: true
+    default: ''
   enable_names:
     client: true
     default: true
-  invite_expiry_days: 1
+  invite_expiry_days: 30
   invite_passthrough_hours: 0
-  invites_shown:
+  invites_per_page:
     client: true
-    default: 30
+    default: 40
   delete_user_max_post_age:
     client: true
     default: 60
@@ -269,19 +290,19 @@ users:
 posting:
   min_post_length:
     client: true
+    min: 1
     default:
       test: 5
       default: 20
   min_private_message_post_length:
     client: true
+    min: 1
     default:
       test: 5
       default: 10
   max_post_length:
     client: true
-    default:
-      test: 4000
-      default: 32000
+    default: 32000
   body_min_entropy: 7
   min_topic_title_length:
     client: true
@@ -291,7 +312,6 @@ posting:
     default: 255
   title_min_entropy: 10
   title_prettify: true
-  title_sanitize: false
   title_fancy_entities: true
   min_private_message_title_length:
     client: true
@@ -310,7 +330,7 @@ posting:
     default: 15
   enable_private_messages: true
   ninja_edit_window: 300
-  post_edit_time_limit: 525600
+  post_edit_time_limit: 262800
   edit_history_visible_to_public:
     client: true
     default: true
@@ -325,6 +345,8 @@ posting:
     default: true
   suppress_reply_directly_above:
     client: true
+    default: true
+  suppress_reply_when_quoting:
     default: true
   post_undo_action_window_mins: 10
   max_mentions_per_post: 10
@@ -367,29 +389,27 @@ email:
   email_custom_headers: 'Auto-Submitted: auto-generated'
   reply_by_email_enabled: false
   reply_by_email_address: ''
-  pop3s_polling_enabled: false
-  pop3s_polling_insecure: false
-  pop3s_polling_period_mins: 5
-  pop3s_polling_host: ''
-  pop3s_polling_port: 995
-  pop3s_polling_username: ''
-  pop3s_polling_password: ''
+  pop3_polling_enabled: false
+  pop3_polling_ssl: true
+  pop3_polling_period_mins: 5
+  pop3_polling_host: ''
+  pop3_polling_port: 995
+  pop3_polling_username: ''
+  pop3_polling_password: ''
   email_in:
     default: false
     client: true
-  email_in_address:
-    default: ''
-    type: email
   email_in_min_trust:
-    default: 3
-    enum: 'MinTrustToCreateTopicSetting'
-  email_in_category: -1
+    default: 2
+    enum: 'TrustLevelSetting'
   email_prefix: ''
+  email_site_title: ''
+  disable_emails: false
 
 files:
   max_image_size_kb:
     client: true
-    default: 2048
+    default: 3072
   max_attachment_size_kb:
     client: true
     default: 1024
@@ -420,7 +440,11 @@ files:
   clean_up_uploads: false
   clean_orphan_uploads_grace_period_hours: 1
   purge_deleted_uploads_grace_period_days: 30
+  prevent_anons_from_downloading_files:
+    default: false
+    client: true
   enable_s3_uploads: false
+  s3_use_iam_profile: false
   s3_access_key_id: ''
   s3_secret_access_key: ''
   s3_region:
@@ -441,48 +465,64 @@ files:
     default: false
 
 trust:
-  default_trust_level: 0
-  default_invitee_trust_level: 1
+  default_trust_level:
+    default: 0
+    enum: 'TrustLevelSetting'
+  default_invitee_trust_level:
+    default: 1
+    enum: 'TrustLevelSetting'
   min_trust_to_create_topic:
     default: 0
-    enum: 'MinTrustToCreateTopicSetting'
+    enum: 'TrustLevelSetting'
   min_trust_to_edit_wiki_post:
     default: 1
-    enum: 'MinTrustToCreateTopicSetting'
-  basic_requires_topics_entered: 5
-  basic_requires_read_posts: 30
-  basic_requires_time_spent_mins: 10
-  regular_requires_topics_entered: 20
-  regular_requires_read_posts: 100
-  regular_requires_time_spent_mins: 60
-  regular_requires_days_visited: 15
-  regular_requires_likes_received: 1
-  regular_requires_likes_given: 1
-  regular_requires_topic_reply_count: 3
-  leader_requires_days_visited:
+    enum: 'TrustLevelSetting'
+  tl1_requires_topics_entered: 5
+  tl1_requires_read_posts:
+    default: 30
+    client: true
+  tl1_requires_time_spent_mins: 10
+  tl2_requires_topics_entered: 20
+  tl2_requires_read_posts: 100
+  tl2_requires_time_spent_mins: 60
+  tl2_requires_days_visited: 15
+  tl2_requires_likes_received: 1
+  tl2_requires_likes_given: 1
+  tl2_requires_topic_reply_count: 3
+  tl3_requires_days_visited:
     default: 50
-    min: 1
+    min: 0
     max: 100
-  leader_requires_topics_replied_to:
+  tl3_requires_topics_replied_to:
     default: 10
     min: 0
-  leader_requires_topics_viewed:
+  tl3_requires_topics_viewed:
     default: 25
     min: 0
     max: 100
-  leader_requires_posts_read:
+  tl3_requires_posts_read:
     default: 25
     min: 0
     max: 100
-  leader_requires_topics_viewed_all_time:
+  tl3_requires_topics_viewed_all_time:
     default: 200
     min: 0
-  leader_requires_posts_read_all_time:
+  tl3_requires_posts_read_all_time:
     default: 500
     min: 0
-  leader_requires_max_flagged:
+  tl3_requires_max_flagged:
     default: 5
     min: 0
+  tl3_promotion_min_duration:
+    default: 14
+    min: 0
+  tl3_requires_likes_given:
+    default: 30
+    min: 0
+  tl3_requires_likes_received:
+    default: 20
+    min: 0
+  tl3_links_no_follow: false
 
 security:
   use_https: false
@@ -503,12 +543,6 @@ spam:
   exclude_rel_nofollow_domains:
     default: ''
     type: list
-  email_domains_blacklist:
-    default: 'mailinator.com'
-    type: list
-  email_domains_whitelist:
-    default: ''
-    type: list
   flags_required_to_hide_post: 3
   cooldown_minutes_after_hiding_posts: 10
   num_flags_to_block_new_user: 3
@@ -519,14 +553,20 @@ spam:
   white_listed_spam_host_domains:
     default: ''
     type: list
+  levenshtein_distance_spammer_emails:
+      default: 2
+      min: 0
+      max: 3
 
 rate_limits:
   unique_posts_mins:
     default:
       test: 0
       default: 5
-  rate_limit_create_topic: 5
+  rate_limit_create_topic: 15
   rate_limit_create_post: 5
+  rate_limit_new_user_create_topic: 60
+  rate_limit_new_user_create_post: 30
   max_topics_per_day: 20
   max_private_messages_per_day: 20
   max_likes_per_day: 50
@@ -561,6 +601,9 @@ developer:
     client: true
     default: 5
   active_user_rate_limit_secs: 60
+  verbose_localization:
+    default: false
+    client: true
 
 embedding:
   embeddable_host: ''
@@ -592,7 +635,7 @@ legal:
 
 backups:
   allow_restore:
-    client: true
+    client: false
     default: false
   maximum_backups:
     client: true
@@ -647,6 +690,39 @@ uncategorized:
     client: true
     default: 5000
 
+  # Post/Like heat thresholds
+  topic_post_like_heat_low:
+    client: true
+    default: 0.5
+  topic_post_like_heat_medium:
+    client: true
+    default: 1.0
+  topic_post_like_heat_high:
+    client: true
+    default: 2.0
+
+  # History edit heat thresholds
+  history_hours_low:
+    client: true
+    default: 12
+  history_hours_medium:
+    client: true
+    default: 24
+  history_hours_high:
+    client: true
+    default: 48
+
+  # Cold map thresholds
+  cold_age_days_low:
+    client: true
+    default: 14
+  cold_age_days_medium:
+    client: true
+    default: 60
+  cold_age_days_high:
+    client: true
+    default: 120
+
   # Warnings
   educate_until_posts: 2
   sequential_replies_threshold: 2
@@ -676,7 +752,7 @@ uncategorized:
     type: list
     default: ''
 
-  enable_cdn_js_debugging: true
+  enable_cdn_js_debugging: false
 
   show_create_topics_notice:
     client: true
@@ -687,3 +763,24 @@ uncategorized:
     default: true
 
   disable_edit_notifications: false
+  purge_inactive_users_grace_period_days: 7
+
+  company_full_name: 'My Unconfigured Forum Ltd.'
+  company_short_name: 'Unconfigured Forum'
+  company_domain: 'www.example.com'
+
+  vacuum_db_days: 90
+  last_vacuum:
+    default: 0
+    hidden: true
+
+  tos_topic_id:
+    default: -1
+    hidden: true
+  guidelines_topic_id:
+    default: -1
+    hidden: true
+  privacy_topic_id:
+    default: -1
+    hidden: true
+

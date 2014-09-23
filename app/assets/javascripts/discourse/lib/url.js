@@ -6,10 +6,17 @@
   @namespace Discourse
   @module Discourse
 **/
+
+var jumpScheduled = false;
+
 Discourse.URL = Em.Object.createWithMixins({
 
   // Used for matching a topic
   TOPIC_REGEXP: /\/t\/([^\/]+)\/(\d+)\/?(\d+)?/,
+
+  isJumpScheduled: function() {
+    return jumpScheduled;
+  },
 
   /**
     Jumps to a particular post in the stream
@@ -64,6 +71,23 @@ Discourse.URL = Em.Object.createWithMixins({
     }
   },
 
+  // Scroll to the same page, different anchor
+  scrollToId: function(id) {
+    if (Em.isEmpty(id)) { return; }
+
+    jumpScheduled = true;
+    Em.run.schedule('afterRender', function() {
+      var $elem = $(id);
+      if ($elem.length === 0) {
+        $elem = $("[name=" + id.replace('#', ''));
+      }
+      if ($elem.length > 0) {
+        $('html,body').scrollTop($elem.offset().top - $('header').height() - 15);
+        jumpScheduled = false;
+      }
+    });
+  },
+
   /**
     Our custom routeTo method is used to intelligently overwrite default routing
     behavior.
@@ -89,14 +113,9 @@ Discourse.URL = Em.Object.createWithMixins({
       return;
     }
 
-    // Scroll to the same page, differnt anchor
+    // Scroll to the same page, different anchor
     if (path.indexOf('#') === 0) {
-      var $elem = $(path);
-      if ($elem.length > 0) {
-        Em.run.schedule('afterRender', function() {
-          $('html,body').scrollTop($elem.offset().top - $('header').height() - 15);
-        });
-      }
+      this.scrollToId(path);
       return;
     }
 
@@ -129,8 +148,10 @@ Discourse.URL = Em.Object.createWithMixins({
     // TODO: Extract into rules we can inject into the URL handler
     if (this.navigatedToHome(oldPath, path)) { return; }
 
-    if (path.match(/^\/?users\/[^\/]+$/)) {
-      path += "/activity";
+    if (oldPath === path) {
+      // If navigating to the same path send an app event. Views can watch it
+      // and tell their controllers to refresh
+      this.appEvents.trigger('url:refresh');
     }
 
     return this.handleURL(path);
@@ -202,7 +223,9 @@ Discourse.URL = Em.Object.createWithMixins({
             highlightOnInsert: closest,
             enteredAt: new Date().getTime().toString()
           });
-          topicProgressController.set('progressPosition', closest);
+          var closestPost = postStream.closestPostForPostNumber(closest),
+              progress = postStream.progressIndexOfPost(closestPost);
+          topicProgressController.set('progressPosition', progress);
           Discourse.PostView.considerHighlighting(topicController, closest);
         }).then(function() {
           Discourse.URL.jumpToPost(closest);
@@ -228,12 +251,7 @@ Discourse.URL = Em.Object.createWithMixins({
     var homepage = Discourse.Utilities.defaultHomepage();
 
     if (window.history && window.history.pushState && path === "/" && (oldPath === "/" || oldPath === "/" + homepage)) {
-      // refresh the list
-      switch (homepage) {
-        case "top" :       { this.controllerFor('discovery/top').send('refresh'); break; }
-        case "categories": { this.controllerFor('discovery/categories').send('refresh'); break; }
-        default:           { this.controllerFor('discovery/topics').send('refresh'); break; }
-      }
+      this.appEvents.trigger('url:refresh');
       return true;
     }
 
@@ -299,12 +317,16 @@ Discourse.URL = Em.Object.createWithMixins({
     }
 
     var transition = router.handleURL(path);
+    transition._discourse_intercepted = true;
     transition.promise.then(function() {
       if (elementId) {
+
+        jumpScheduled = true;
         Em.run.next('afterRender', function() {
           var offset = $('#' + elementId).offset();
           if (offset && offset.top) {
             $('html, body').scrollTop(offset.top - $('header').height() - 10);
+            jumpScheduled = false;
           }
         });
       }

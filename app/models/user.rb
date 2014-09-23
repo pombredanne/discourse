@@ -23,7 +23,8 @@ class User < ActiveRecord::Base
   has_many :user_open_ids, dependent: :destroy
   has_many :user_actions, dependent: :destroy
   has_many :post_actions, dependent: :destroy
-  has_many :user_badges, dependent: :destroy
+  has_many :user_badges, -> {where('user_badges.badge_id IN (SELECT id FROM badges where enabled)')}, dependent: :destroy
+  has_many :badges, through: :user_badges
   has_many :email_logs, dependent: :destroy
   has_many :post_timings
   has_many :topic_allowed_users, dependent: :destroy
@@ -34,6 +35,7 @@ class User < ActiveRecord::Base
   has_many :invites, dependent: :destroy
   has_many :topic_links, dependent: :destroy
   has_many :uploads
+  has_many :warnings
 
   has_one :user_avatar, dependent: :destroy
   has_one :facebook_user_info, dependent: :destroy
@@ -57,6 +59,8 @@ class User < ActiveRecord::Base
 
   delegate :last_sent_email_address, :to => :email_logs
 
+  before_validation :downcase_email
+
   validates_presence_of :username
   validate :username_validator
   validates :email, presence: true, uniqueness: true
@@ -64,25 +68,27 @@ class User < ActiveRecord::Base
   validate :password_validator
   validates :ip_address, allowed_ip_address: {on: :create, message: :signup_not_allowed}
 
-  before_save :update_username_lower
-  before_save :ensure_password_is_hashed
   after_initialize :add_trust_level
   after_initialize :set_default_email_digest
   after_initialize :set_default_external_links_in_new_tab
-
-  after_save :update_tracked_topics
-  after_save :clear_global_notice_if_needed
 
   after_create :create_email_token
   after_create :create_user_stat
   after_create :create_user_profile
   after_create :ensure_in_trust_level_group
+
+  before_save :update_username_lower
+  before_save :ensure_password_is_hashed
+
+  after_save :update_tracked_topics
+  after_save :clear_global_notice_if_needed
   after_save :refresh_avatar
+  after_save :badge_grant
 
   before_destroy do
     # These tables don't have primary keys, so destroying them with activerecord is tricky:
     PostTiming.delete_all(user_id: self.id)
-    View.delete_all(user_id: self.id)
+    TopicViewItem.delete_all(user_id: self.id)
   end
 
   # Whether we need to be sending a system message after creation
@@ -91,26 +97,32 @@ class User < ActiveRecord::Base
   # This is just used to pass some information into the serializer
   attr_accessor :notification_channel_position
 
-  scope :blocked, -> { where(blocked: true) } # no index
-  scope :not_blocked, -> { where(blocked: false) } # no index
-  scope :suspended, -> { where('suspended_till IS NOT NULL AND suspended_till > ?', Time.zone.now) } # no index
-  scope :not_suspended, -> { where('suspended_till IS NULL OR suspended_till <= ?', Time.zone.now) }
-  # excluding fake users like the community user
+  # set to true to optimize creation and save for imports
+  attr_accessor :import_mode
+
+  # excluding fake users like the system user
   scope :real, -> { where('id > 0') }
+
+  # TODO-PERF: There is no indexes on any of these
+  # and NotifyMailingListSubscribers does a select-all-and-loop
+  # may want to create an index on (active, blocked, suspended_till, mailing_list_mode)?
+  scope :blocked, -> { where(blocked: true) }
+  scope :not_blocked, -> { where(blocked: false) }
+  scope :suspended, -> { where('suspended_till IS NOT NULL AND suspended_till > ?', Time.zone.now) }
+  scope :not_suspended, -> { where('suspended_till IS NULL OR suspended_till <= ?', Time.zone.now) }
+  scope :activated, -> { where(active: true) }
 
   module NewTopicDuration
     ALWAYS = -1
     LAST_VISIT = -2
   end
 
-  GLOBAL_USERNAME_LENGTH_RANGE = 3..15
+  def self.max_password_length
+    200
+  end
 
   def self.username_length
-    if SiteSetting.enforce_global_nicknames
-      GLOBAL_USERNAME_LENGTH_RANGE
-    else
-      SiteSetting.min_username_length.to_i..SiteSetting.max_username_length.to_i
-    end
+    SiteSetting.min_username_length.to_i..SiteSetting.max_username_length.to_i
   end
 
   def custom_groups
@@ -171,26 +183,23 @@ class User < ActiveRecord::Base
   end
 
   def change_username(new_username)
-    current_username = self.username
     self.username = new_username
-
-    if current_username.downcase != new_username.downcase && valid?
-      DiscourseHub.username_operation { DiscourseHub.change_username(current_username, new_username) }
-    end
-
     save
   end
 
   # Use a temporary key to find this user, store it in redis with an expiry
   def temporary_key
     key = SecureRandom.hex(32)
-    $redis.setex "temporary_key:#{key}", 1.week, id.to_s
+    $redis.setex "temporary_key:#{key}", 2.months, id.to_s
     key
   end
 
   def created_topic_count
-    topics.count
+    stat = user_stat || create_user_stat
+    stat.topic_count
   end
+
+  alias_method :topic_count, :created_topic_count
 
   # tricky, we need our bus to be subscribed from the right spot
   def sync_notification_channel_position
@@ -294,7 +303,7 @@ class User < ActiveRecord::Base
   end
 
   def new_user?
-    created_at >= 24.hours.ago || trust_level == TrustLevel.levels[:newuser]
+    created_at >= 24.hours.ago || trust_level == TrustLevel[0]
   end
 
   def seen_before?
@@ -376,16 +385,21 @@ class User < ActiveRecord::Base
     UserAction.where(user_id: id, action_type: UserAction::WAS_LIKED).count
   end
 
-  def post_count
-    posts.count
+  def like_given_count
+    UserAction.where(user_id: id, action_type: UserAction::LIKE).count
   end
 
-  def first_post
-    posts.order('created_at ASC').first
+  def post_count
+    stat = user_stat || create_user_stat
+    stat.post_count
   end
 
   def flags_given_count
     PostAction.where(user_id: id, post_action_type_id: PostActionType.flag_types.values).count
+  end
+
+  def warnings_received_count
+    warnings.count
   end
 
   def flags_received_count
@@ -400,7 +414,7 @@ class User < ActiveRecord::Base
 
     # Does not apply to staff, non-new members or your own topics
     return false if staff? ||
-                    (trust_level != TrustLevel.levels[:newuser]) ||
+                    (trust_level != TrustLevel[0]) ||
                     Topic.where(id: topic_id, user_id: id).exists?
 
     last_action_in_topic = UserAction.last_action_in_topic(id, topic_id)
@@ -433,7 +447,7 @@ class User < ActiveRecord::Base
   # Use this helper to determine if the user has a particular trust level.
   # Takes into account admin, etc.
   def has_trust_level?(level)
-    raise "Invalid trust level #{level}" unless TrustLevel.valid_level?(level)
+    raise "Invalid trust level #{level}" unless TrustLevel.valid?(level)
     admin? || moderator? || TrustLevel.compare(trust_level, level)
   end
 
@@ -491,7 +505,7 @@ class User < ActiveRecord::Base
   end
 
   def badge_count
-    user_badges.count
+    user_badges.select('distinct badge_id').count
   end
 
   def featured_user_badges
@@ -557,7 +571,7 @@ class User < ActiveRecord::Base
   end
 
   def leader_requirements
-    @lq ||= LeaderRequirements.new(self)
+    @lq ||= TrustLevel3Requirements.new(self)
   end
 
   def should_be_redirected_to_top
@@ -601,6 +615,8 @@ class User < ActiveRecord::Base
   end
 
   def refresh_avatar
+    return if @import_mode
+
     avatar = user_avatar || create_user_avatar
     gravatar_downloaded = false
 
@@ -611,24 +627,18 @@ class User < ActiveRecord::Base
 
     if !self.uploaded_avatar_id && gravatar_downloaded
       self.update_column(:uploaded_avatar_id, avatar.gravatar_upload_id)
-      grant_autobiographer
-    else
-      if uploaded_avatar_id_changed?
-        grant_autobiographer
-      end
     end
-
   end
 
-  def grant_autobiographer
-    if self.user_profile.bio_raw &&
-          self.user_profile.bio_raw.strip.length > Badge::AutobiographerMinBioLength &&
-          uploaded_avatar_id
-       BadgeGranter.grant(Badge.find(Badge::Autobiographer), self)
-    end
+  def first_post_created_at
+    user_stat.try(:first_post_created_at)
   end
 
   protected
+
+  def badge_grant
+    BadgeGranter.queue_badge_grant(Badge::Trigger::UserChange, user: self)
+  end
 
   def update_tracked_topics
     return unless auto_track_topics_after_msecs_changed?
@@ -673,6 +683,7 @@ class User < ActiveRecord::Base
   end
 
   def hash_password(password, salt)
+    raise "password is too long" if password.size > User.max_password_length
     Pbkdf2.hash_password(password, salt, Rails.configuration.pbkdf2_iterations, Rails.configuration.pbkdf2_algorithm)
   end
 
@@ -684,6 +695,10 @@ class User < ActiveRecord::Base
 
   def update_username_lower
     self.username_lower = username.downcase
+  end
+
+  def downcase_email
+    self.email = self.email.downcase if self.email
   end
 
   def username_validator
@@ -721,6 +736,29 @@ class User < ActiveRecord::Base
     end
   end
 
+  # Delete inactive accounts that are over a week old
+  def self.purge_inactive
+
+    # You might be wondering why this query matches on post_count = 0. The reason
+    # is a long time ago we had a bug where users could post before being activated
+    # and some sites still have those records which can't be purged.
+    to_destroy = User.where(active: false)
+                     .joins('INNER JOIN user_stats AS us ON us.user_id = users.id')
+                     .where("created_at < ?", SiteSetting.purge_inactive_users_grace_period_days.days.ago)
+                     .where('us.post_count = 0')
+                     .where('NOT admin AND NOT moderator')
+                     .limit(100)
+
+    destroyer = UserDestroyer.new(Discourse.system_user)
+    to_destroy.each do |u|
+      begin
+        destroyer.destroy(u, context: I18n.t(:purge_reason))
+      rescue Discourse::InvalidAccess
+        # if for some reason the user can't be deleted, continue on to the next one
+      end
+    end
+  end
+
   private
 
   def previous_visit_at_update_required?(timestamp)
@@ -742,15 +780,15 @@ end
 #
 #  id                            :integer          not null, primary key
 #  username                      :string(60)       not null
-#  created_at                    :datetime
-#  updated_at                    :datetime
+#  created_at                    :datetime         not null
+#  updated_at                    :datetime         not null
 #  name                          :string(255)
 #  seen_notification_id          :integer          default(0), not null
 #  last_posted_at                :datetime
 #  email                         :string(256)      not null
 #  password_hash                 :string(64)
 #  salt                          :string(32)
-#  active                        :boolean
+#  active                        :boolean          default(FALSE), not null
 #  username_lower                :string(60)       not null
 #  auth_token                    :string(32)
 #  last_seen_at                  :datetime
@@ -787,12 +825,13 @@ end
 #  registration_ip_address       :inet
 #  last_redirected_to_top_at     :datetime
 #  disable_jump_reply            :boolean          default(FALSE), not null
+#  edit_history_public           :boolean          default(FALSE), not null
 #
 # Indexes
 #
 #  index_users_on_auth_token      (auth_token)
-#  index_users_on_email           (email) UNIQUE
 #  index_users_on_last_posted_at  (last_posted_at)
+#  index_users_on_last_seen_at    (last_seen_at)
 #  index_users_on_username        (username) UNIQUE
 #  index_users_on_username_lower  (username_lower) UNIQUE
 #

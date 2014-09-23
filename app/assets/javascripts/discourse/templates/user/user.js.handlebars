@@ -1,6 +1,6 @@
 <div class='container'>
   {{custom-html "top"}}
-  {{Discourse.globalNotice}}
+  {{global-notice}}
 </div>
 
 {{#unless loading}}
@@ -9,9 +9,9 @@
     <section class='user-navigation'>
 
       <ul class='action-list nav-stacked'>
-        {{discourse-activity-filter count=statsCountNonPM user=model userActionType=userActionType indexStream=indexStream}}
+        {{activity-filter count=statsCountNonPM user=model userActionType=userActionType indexStream=indexStream}}
         {{#each stat in statsExcludingPms}}
-          {{discourse-activity-filter content=stat user=model userActionType=userActionType indexStream=indexStream}}
+          {{activity-filter content=stat user=model userActionType=userActionType indexStream=indexStream}}
         {{/each}}
         {{#if showBadges}}
           {{#link-to 'user.badges' tagName="li"}}
@@ -19,6 +19,16 @@
               <i class='glyph fa fa-certificate'></i>
               {{i18n badges.title}}
               <span class='count'>({{badge_count}})</span>
+              <span class='fa fa-chevron-right'></span>
+            {{/link-to}}
+          {{/link-to}}
+        {{/if}}
+        {{#if canSeeNotificationHistory}}
+          {{#link-to 'user.notifications' tagName="li"}}
+            {{#link-to 'user.notifications'}}
+              <i class='glyph fa fa-comment'></i>
+              {{i18n user.notifications}}
+              <span class='count'>({{notification_count}})</span>
               <span class='fa fa-chevron-right'></span>
             {{/link-to}}
           {{/link-to}}
@@ -52,11 +62,6 @@
         </ul>
       {{/if}}
 
-      {{#if can_edit}}
-        <div style='margin-top: 10px'>
-          <button class='btn' data-not-implemented='true' disabled title="{{i18n not_implemented}}"><i class='fa fa-download'></i>{{i18n user.download_archive}}</button>
-        </div>
-      {{/if}}
     </section>
 
     <section class='user-main'>
@@ -69,13 +74,24 @@
                 <div><span class="pill helpful-flags">{{number_of_flags_given}}</span>&nbsp;{{i18n user.staff_counters.flags_given}}</div>
               {{/if}}
               {{#if number_of_flagged_posts}}
-                <div><span class="pill flagged-posts">{{number_of_flagged_posts}}</span>&nbsp;{{i18n user.staff_counters.flagged_posts}}</div>
+                <div>
+                  {{#link-to 'user.flaggedPosts' this}}
+                    <span class="pill flagged-posts">{{number_of_flagged_posts}}</span>&nbsp;{{i18n user.staff_counters.flagged_posts}}
+                  {{/link-to}}
+                </div>
               {{/if}}
               {{#if number_of_deleted_posts}}
-                <div><span class="pill deleted-posts">{{number_of_deleted_posts}}</span>&nbsp;{{i18n user.staff_counters.deleted_posts}}</div>
+                <div>
+                  {{#link-to 'user.deletedPosts' this}}
+                    <span class="pill deleted-posts">{{number_of_deleted_posts}}</span>&nbsp;{{i18n user.staff_counters.deleted_posts}}
+                  {{/link-to}}
+                </div>
               {{/if}}
               {{#if number_of_suspensions}}
                 <div><span class="pill suspensions">{{number_of_suspensions}}</span>&nbsp;{{i18n user.staff_counters.suspensions}}</div>
+              {{/if}}
+              {{#if number_of_warnings}}
+                <div><span class="pill warnings-received">{{number_of_warnings}}</span>&nbsp;{{i18n user.staff_counters.warnings_received}}</div>
               {{/if}}
             </div>
 
@@ -107,7 +123,14 @@
                 <dd><i class="fa fa-map-marker"></i> {{location}}</dd>
               {{/if}}
               {{#if websiteName}}
-                <dt>{{i18n user.website}}</dt><dd><a {{bind-attr href="website"}} target="_blank">{{websiteName}}</a></dd>
+                <dt>{{i18n user.website}}</dt>
+                <dd>
+                  {{#if linkWebsite}}
+                    <a {{bind-attr href="website"}} rel="nofollow" target="_blank">{{websiteName}}</a>
+                  {{else}}
+                    <span {{bind-attr title="website"}}>{{websiteName}}</span>
+                  {{/if}}
+                </dd>
               {{/if}}
               {{#if created_at}}
                 <dt>{{i18n user.created}}</dt><dd>{{bound-date created_at}}</dd>
@@ -120,9 +143,6 @@
               {{/if}}
               {{#if invited_by}}
                 <dt>{{i18n user.invited_by}}</dt><dd>{{#link-to 'user' invited_by}}{{invited_by.username}}{{/link-to}}</dd>
-              {{/if}}
-              {{#if email}}
-                <dt>{{i18n user.email.title}}</dt><dd {{bind-attr title="email"}}>{{email}}</dd>
               {{/if}}
               <dt>{{i18n user.trust_level}}</dt><dd>{{trustLevel.name}}</dd>
             </dl>

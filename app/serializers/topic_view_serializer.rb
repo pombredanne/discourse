@@ -39,8 +39,11 @@ class TopicViewSerializer < ApplicationSerializer
              :highest_post_number,
              :last_read_post_number,
              :deleted_by,
+             :has_deleted,
              :actions_summary,
-             :expandable_first_post
+             :expandable_first_post,
+             :is_warning
+
 
   # Define a delegator for each attribute of the topic we want
   attributes(*topic_attributes)
@@ -108,6 +111,14 @@ class TopicViewSerializer < ApplicationSerializer
     result
   end
 
+
+  def is_warning
+    object.topic.private_message? && object.topic.subtype == TopicSubtype.moderator_warning
+  end
+
+  def include_is_warning?
+    is_warning
+  end
   def draft
     object.draft
   end
@@ -172,9 +183,17 @@ class TopicViewSerializer < ApplicationSerializer
                   count: 0,
                   hidden: false,
                   can_act: scope.post_can_act?(post, sym)}
-      # TODO: other keys? :can_clear_flags, :acted, :can_undo
+      # TODO: other keys? :can_defer_flags, :acted, :can_undo
     end
     result
+  end
+
+  def has_deleted
+    object.has_deleted?
+  end
+
+  def include_has_deleted?
+    object.guardian.can_see_deleted_posts?
   end
 
   def expandable_first_post

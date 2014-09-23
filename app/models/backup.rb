@@ -10,8 +10,10 @@ class Backup
   end
 
   def self.all
-    backups = Dir.glob(File.join(Backup.base_directory, "*.tar.gz"))
-    backups.sort.reverse.map { |backup| Backup.create_from_filename(File.basename(backup)) }
+    Dir.glob(File.join(Backup.base_directory, "*.tar.gz"))
+       .sort_by { |file| File.mtime(file) }
+       .reverse
+       .map { |backup| Backup.create_from_filename(File.basename(backup)) }
   end
 
   def self.[](filename)
@@ -63,22 +65,36 @@ class Backup
   end
 
   def self.remove_old
+    return if Rails.env.development?
     all_backups = Backup.all
     return unless all_backups.size > SiteSetting.maximum_backups
-    all_backups[SiteSetting.maximum_backups..-1].each {|b| b.remove}
+    all_backups[SiteSetting.maximum_backups..-1].each(&:remove)
   end
 
   private
 
+    def s3_options
+      options = {
+        provider: 'AWS',
+        region: SiteSetting.s3_region.blank? ? "us-east-1" : SiteSetting.s3_region,
+      }
+      if (SiteSetting.s3_use_iam_profile.present?)
+        options.merge!(:use_iam_profile => true)
+      else
+        options.merge!(:aws_access_key_id => SiteSetting.s3_access_key_id,
+         :aws_secret_access_key => SiteSetting.s3_secret_access_key)
+      end
+      options
+    end
+
     def fog
       return @fog if @fog
-      return unless SiteSetting.s3_access_key_id.present? &&
-                    SiteSetting.s3_secret_access_key.present? &&
+      return unless ((SiteSetting.s3_access_key_id.present? &&
+                    SiteSetting.s3_secret_access_key.present?) ||
+                    SiteSetting.s3_use_iam_profile.present?) &&
                     SiteSetting.s3_backup_bucket.present?
       require 'fog'
-      @fog = Fog::Storage.new(provider: 'AWS',
-                              aws_access_key_id: SiteSetting.s3_access_key_id,
-                              aws_secret_access_key: SiteSetting.s3_secret_access_key)
+      @fog = Fog::Storage.new(s3_options)
     end
 
     def fog_directory

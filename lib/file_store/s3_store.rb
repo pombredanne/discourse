@@ -30,7 +30,7 @@ module FileStore
     end
 
     def has_been_uploaded?(url)
-      url.start_with?(absolute_base_url)
+      url.present? && url.start_with?(absolute_base_url)
     end
 
     def absolute_base_url
@@ -98,20 +98,26 @@ module FileStore
 
     def check_missing_site_settings
       raise Discourse::SiteSettingMissing.new("s3_upload_bucket")     if SiteSetting.s3_upload_bucket.blank?
-      raise Discourse::SiteSettingMissing.new("s3_access_key_id")     if SiteSetting.s3_access_key_id.blank?
-      raise Discourse::SiteSettingMissing.new("s3_secret_access_key") if SiteSetting.s3_secret_access_key.blank?
+      unless SiteSetting.s3_use_iam_profile.present?
+        raise Discourse::SiteSettingMissing.new("s3_access_key_id")     if SiteSetting.s3_access_key_id.blank?
+        raise Discourse::SiteSettingMissing.new("s3_secret_access_key") if SiteSetting.s3_secret_access_key.blank?
+      end
     end
 
     def s3_options
       options = {
         provider: 'AWS',
-        aws_access_key_id: SiteSetting.s3_access_key_id,
-        aws_secret_access_key: SiteSetting.s3_secret_access_key,
         scheme: SiteSetting.scheme,
         # cf. https://github.com/fog/fog/issues/2381
         path_style: dns_compatible?(s3_bucket, SiteSetting.use_https?),
       }
       options[:region] = SiteSetting.s3_region unless SiteSetting.s3_region.empty?
+      if (SiteSetting.s3_use_iam_profile.present?)
+        options.merge!(:use_iam_profile => true)
+      else
+        options.merge!(:aws_access_key_id => SiteSetting.s3_access_key_id,
+         :aws_secret_access_key => SiteSetting.s3_secret_access_key)
+      end
       options
     end
 
@@ -133,7 +139,11 @@ module FileStore
         public: true,
         body: file
       }
-      args[:content_disposition] = "attachment; filename=\"#{filename}\"" if filename
+
+      if filename && !FileHelper.is_image?(filename)
+        args[:content_disposition] = "attachment; filename=\"#{filename}\""
+      end
+
       args[:content_type] = content_type if content_type
 
       get_or_create_directory(s3_bucket).files.create(args)

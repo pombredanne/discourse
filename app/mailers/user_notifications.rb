@@ -30,6 +30,10 @@ class UserNotifications < ActionMailer::Base
                  email_token: opts[:email_token])
   end
 
+  def account_created(user, opts={})
+    build_email( user.email, template: "user_notifications.account_created", email_token: opts[:email_token])
+  end
+
 
   def digest(user, opts={})
     @user = user
@@ -39,6 +43,7 @@ class UserNotifications < ActionMailer::Base
 
     @site_name = SiteSetting.title
 
+    @header_color = ColorScheme.hex_for_name('header_background')
     @last_seen_at = I18n.l(@user.last_seen_at || @user.created_at, format: :short)
 
     # A list of topics to show the user
@@ -197,7 +202,11 @@ class UserNotifications < ActionMailer::Base
     html = UserNotificationRenderer.new(Rails.configuration.paths["app/views"]).render(
       template: 'email/notification',
       format: :html,
-      locals: { context_posts: context_posts, post: post, top: top ? PrettyText.cook(top).html_safe : nil }
+      locals: { context_posts: context_posts,
+                post: post,
+                top: top ? PrettyText.cook(top).html_safe : nil,
+                classes: RTL.new(user).css_class
+      }
     )
 
     template = "user_notifications.user_#{notification_type}"

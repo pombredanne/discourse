@@ -6,17 +6,17 @@ describe AdminDashboardData do
     subject { described_class.new.rails_env_check }
 
     it 'returns nil when running in production mode' do
-      Rails.stubs(:env).returns('production')
+      Rails.stubs(env: ActiveSupport::StringInquirer.new('production'))
       subject.should be_nil
     end
 
     it 'returns a string when running in development mode' do
-      Rails.stubs(:env).returns('development')
+      Rails.stubs(env: ActiveSupport::StringInquirer.new('development'))
       subject.should_not be_nil
     end
 
     it 'returns a string when running in test mode' do
-      Rails.stubs(:env).returns('test')
+      Rails.stubs(env: ActiveSupport::StringInquirer.new('test'))
       subject.should_not be_nil
     end
   end
@@ -119,12 +119,12 @@ describe AdminDashboardData do
       before { ActionMailer::Base.stubs(:smtp_settings).returns({address: 'smtp.gmail.com'}) }
 
       it 'returns nil in development env' do
-        Rails.stubs(:env).returns('development')
+        Rails.stubs(env: ActiveSupport::StringInquirer.new('development'))
         expect(subject).to be_nil
       end
 
       it 'returns a string when in production env' do
-        Rails.stubs(:env).returns('production')
+        Rails.stubs(env: ActiveSupport::StringInquirer.new('production'))
         expect(subject).to_not be_nil
       end
     end
@@ -241,28 +241,6 @@ describe AdminDashboardData do
       let(:key) { :github_client_id }
       let(:secret) { :github_client_secret }
       include_examples 'problem detection for login providers'
-    end
-  end
-
-  describe "enforce_global_nicknames_check" do
-    subject { described_class.new.enforce_global_nicknames_check }
-
-    it 'returns nil when enforce_global_nicknames and discourse_org_access_key are set' do
-      SiteSetting.stubs(:enforce_global_nicknames).returns(true)
-      SiteSetting.stubs(:discourse_org_access_key).returns('123')
-      subject.should be_nil
-    end
-
-    it 'returns a string when enforce_global_nicknames is true but discourse_org_access_key is not' do
-      SiteSetting.stubs(:enforce_global_nicknames).returns(true)
-      SiteSetting.stubs(:discourse_org_access_key).returns('')
-      subject.should_not be_nil
-    end
-
-    it 'returns nil when enforce_global_nicknames is false and discourse_org_access_key is set' do
-      SiteSetting.stubs(:enforce_global_nicknames).returns(false)
-      SiteSetting.stubs(:discourse_org_access_key).returns('123')
-      subject.should be_nil
     end
   end
 

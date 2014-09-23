@@ -1,18 +1,21 @@
 class UserProfile < ActiveRecord::Base
   belongs_to :user, inverse_of: :user_profile
 
+  validates :bio_raw, length: { maximum: 3000 }
   validates :user, presence: true
   before_save :cook
-  after_save :assign_autobiographer
+  after_save :trigger_badges
+
+  BAKED_VERSION = 1
 
   def bio_excerpt
     excerpt = PrettyText.excerpt(bio_cooked, 350)
-    return excerpt if excerpt.blank? || user.has_trust_level?(:basic)
+    return excerpt if excerpt.blank? || user.has_trust_level?(TrustLevel[1])
     PrettyText.strip_links(excerpt)
   end
 
   def bio_processed
-    return bio_cooked if bio_cooked.blank? || user.has_trust_level?(:basic)
+    return bio_cooked if bio_cooked.blank? || user.has_trust_level?(TrustLevel[1])
     PrettyText.strip_links(bio_cooked)
   end
 
@@ -36,19 +39,45 @@ class UserProfile < ActiveRecord::Base
     self.save!
   end
 
+  def self.rebake_old(limit)
+    problems = []
+    UserProfile.where('bio_cooked_version IS NULL OR bio_cooked_version < ?', BAKED_VERSION)
+        .limit(limit).each do |p|
+      begin
+        p.rebake!
+      rescue => e
+        problems << {profile: p, ex: e}
+      end
+    end
+    problems
+  end
+
+  def rebake!
+    update_columns(bio_cooked: cooked, bio_cooked_version: BAKED_VERSION)
+  end
+
   protected
 
-  def assign_autobiographer
-    if bio_raw_changed?
-      user.grant_autobiographer
-    end
+  def trigger_badges
+    BadgeGranter.queue_badge_grant(Badge::Trigger::UserChange, user: self)
   end
 
   private
 
+  def cooked
+    if self.bio_raw.present?
+      PrettyText.cook(self.bio_raw, omit_nofollow: user.has_trust_level?(TrustLevel[3]) && !SiteSetting.tl3_links_no_follow)
+    else
+      nil
+    end
+  end
+
   def cook
     if self.bio_raw.present?
-      self.bio_cooked = PrettyText.cook(self.bio_raw, omit_nofollow: user.has_trust_level?(:leader)) if bio_raw_changed?
+      if bio_raw_changed?
+        self.bio_cooked = cooked
+        self.bio_cooked_version = BAKED_VERSION
+      end
     else
       self.bio_cooked = nil
     end
@@ -67,4 +96,9 @@ end
 #  bio_cooked           :text
 #  dismissed_banner_key :integer
 #  profile_background   :string(255)
+#  bio_cooked_version   :integer
+#
+# Indexes
+#
+#  index_user_profiles_on_bio_cooked_version  (bio_cooked_version)
 #

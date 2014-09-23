@@ -1,13 +1,10 @@
-/**
-  The modal for creating accounts
+import ModalFunctionality from 'discourse/mixins/modal-functionality';
 
-  @class CreateAccountController
-  @extends Discourse.Controller
-  @namespace Discourse
-  @uses Discourse.ModalFunctionality
-  @module Discourse
-**/
-export default Discourse.Controller.extend(Discourse.ModalFunctionality, {
+import DiscourseController from 'discourse/controllers/controller';
+
+export default DiscourseController.extend(ModalFunctionality, {
+  needs: ['login'],
+
   uniqueUsernameValidation: null,
   globalNicknameExists: false,
   complete: false,
@@ -18,6 +15,11 @@ export default Discourse.Controller.extend(Discourse.ModalFunctionality, {
   rejectedPasswords: Em.A([]),
   prefilledUsername: null,
   tosAccepted: false,
+
+  hasAuthOptions: Em.computed.notEmpty('authOptions'),
+  canCreateLocal: Discourse.computed.setting('enable_local_logins'),
+  showCreateForm: Em.computed.or('hasAuthOptions', 'canCreateLocal'),
+  maxUsernameLength: Discourse.computed.setting('max_username_length'),
 
   resetForm: function() {
     this.setProperties({
@@ -36,9 +38,11 @@ export default Discourse.Controller.extend(Discourse.ModalFunctionality, {
   },
 
   submitDisabled: function() {
+    // Even if password is required, we respect the tos setting
+    if (this.get('tosAcceptRequired') && !this.get('tosAccepted')) return true;
+
     if (!this.get('passwordRequired')) return false; // 3rd party auth
     if (this.get('formSubmitted')) return true;
-    if (this.get('tosAcceptRequired') && !this.get('tosAccepted')) return true;
     if (this.get('nameValidation.failed')) return true;
     if (this.get('emailValidation.failed')) return true;
     if (this.get('usernameValidation.failed')) return true;
@@ -197,7 +201,7 @@ export default Discourse.Controller.extend(Discourse.ModalFunctionality, {
     }
 
     // If too long
-    if (this.get('accountUsername').length > Discourse.SiteSettings.max_username_length) {
+    if (this.get('accountUsername').length > this.get('maxUsernameLength')) {
       return Discourse.InputValidation.create({
         failed: true,
         reason: I18n.t('user.username.too_long')
@@ -328,6 +332,10 @@ export default Discourse.Controller.extend(Discourse.ModalFunctionality, {
   tosAcceptRequired: Discourse.computed.setting('tos_accept_required'),
 
   actions: {
+    externalLogin: function(provider) {
+      this.get('controllers.login').send('externalLogin', provider);
+    },
+
     createAccount: function() {
       var self = this;
       this.set('formSubmitted', true);

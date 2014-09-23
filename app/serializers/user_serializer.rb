@@ -42,7 +42,11 @@ class UserSerializer < BasicUserSerializer
              :suspend_reason,
              :suspended_till,
              :uploaded_avatar_id,
-             :badge_count
+             :badge_count,
+             :notification_count,
+             :has_title_badges,
+             :edit_history_public,
+             :custom_fields
 
   has_one :invited_by, embed: :object, serializer: BasicUserSerializer
   has_many :custom_groups, embed: :object, serializer: BasicGroupSerializer
@@ -52,7 +56,8 @@ class UserSerializer < BasicUserSerializer
   staff_attributes :number_of_deleted_posts,
                    :number_of_flagged_posts,
                    :number_of_flags_given,
-                   :number_of_suspensions
+                   :number_of_suspensions,
+                   :number_of_warnings
 
 
   private_attributes :email,
@@ -72,10 +77,11 @@ class UserSerializer < BasicUserSerializer
                      :tracked_category_ids,
                      :watched_category_ids,
                      :private_messages_stats,
+                     :notification_count,
                      :disable_jump_reply,
                      :gravatar_avatar_upload_id,
                      :custom_avatar_upload_id,
-                     :custom_fields
+                     :has_title_badges
 
   ###
   ### ATTRIBUTES
@@ -190,6 +196,10 @@ class UserSerializer < BasicUserSerializer
               .count
   end
 
+  def number_of_warnings
+    object.warnings.count
+  end
+
   def number_of_suspensions
     UserHistory.for(object, :suspend_user).count
   end
@@ -230,4 +240,29 @@ class UserSerializer < BasicUserSerializer
     object.user_avatar.try(:custom_upload_id)
   end
 
+  def has_title_badges
+    object.badges.where(allow_title: true).count > 0
+  end
+
+  def notification_count
+    Notification.where(user_id: object.id).count
+  end
+
+  def include_edit_history_public?
+    can_edit && !SiteSetting.edit_history_visible_to_public
+  end
+
+  def custom_fields
+    fields = nil
+
+    if SiteSetting.public_user_custom_fields.present?
+      fields = SiteSetting.public_user_custom_fields.split('|')
+    end
+
+    if fields.present?
+      User.custom_fields_for_ids([object.id], fields)[object.id]
+    else
+      {}
+    end
+  end
 end

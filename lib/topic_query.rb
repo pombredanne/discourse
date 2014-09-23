@@ -23,6 +23,7 @@ class TopicQuery
                      no_subcategories
                      no_definitions
                      status
+                     state
                      search
                      ).map(&:to_sym)
 
@@ -31,9 +32,10 @@ class TopicQuery
     'likes' => 'like_count',
     'views' => 'views',
     'posts' => 'posts_count',
-    'activity' => 'created_at',
+    'activity' => 'bumped_at',
     'posters' => 'participant_count',
-    'category' => 'category_id'
+    'category' => 'category_id',
+    'created' => 'created_at'
   }
 
   def initialize(user=nil, options={})
@@ -92,7 +94,7 @@ class TopicQuery
     score = "#{period}_score"
     create_list(:top, unordered: true) do |topics|
       topics = topics.joins(:top_topic).where("top_topics.#{score} > 0")
-      if period == :yearly && @user.try(:trust_level) == TrustLevel.levels[:newuser]
+      if period == :yearly && @user.try(:trust_level) == TrustLevel[0]
         topics.order(TopicQuerySQL.order_top_with_pinned_category_for(score))
       else
         topics.order(TopicQuerySQL.order_top_for(score))
@@ -244,7 +246,7 @@ class TopicQuery
       end
 
       result = apply_ordering(result, options)
-      result = result.listable_topics.includes(category: :topic_only_relative_url)
+      result = result.listable_topics.includes(:category)
       result = result.where('categories.name is null or categories.name <> ?', options[:exclude_category]).references(:categories) if options[:exclude_category]
 
       # Don't include the category topics if excluded
@@ -265,6 +267,19 @@ class TopicQuery
         result = result.where("topics.id in (select pp.topic_id from post_search_data pd join posts pp on pp.id = pd.post_id where pd.search_data @@ #{Search.ts_query(search.to_s)})")
       end
 
+      # NOTE protect against SYM attack can be removed with Ruby 2.2
+      #
+      state = options[:state]
+      if @user && state &&
+          TopicUser.notification_levels.keys.map(&:to_s).include?(state)
+        level = TopicUser.notification_levels[state.to_sym]
+        result = result.where('topics.id IN (
+                                  SELECT topic_id
+                                  FROM topic_users
+                                  WHERE user_id = ? AND
+                                        notification_level = ?)', @user.id, level)
+      end
+
       if status = options[:status]
         case status
         when 'open'
@@ -273,6 +288,10 @@ class TopicQuery
           result = result.where('topics.closed')
         when 'archived'
           result = result.where('topics.archived')
+        when 'visible'
+          result = result.where('topics.visible')
+        when 'invisible'
+          result = result.where('NOT topics.visible')
         end
       end
 
@@ -299,7 +318,7 @@ class TopicQuery
       result
     end
 
-    def remove_muted_categories(list, user, opts)
+    def remove_muted_categories(list, user, opts=nil)
       category_id = get_category_id(opts[:exclude]) if opts
       if user
         list = list.where("NOT EXISTS(
@@ -337,6 +356,8 @@ class TopicQuery
       result = default_results(unordered: true, per_page: count).where(closed: false, archived: false)
       excluded_topic_ids += Category.pluck(:topic_id).compact
       result = result.where("topics.id NOT IN (?)", excluded_topic_ids) unless excluded_topic_ids.empty?
+
+      result = remove_muted_categories(result, @user)
 
       # If we are in a category, prefer it for the random results
       if topic.category_id

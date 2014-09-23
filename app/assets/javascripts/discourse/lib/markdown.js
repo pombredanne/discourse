@@ -1,4 +1,4 @@
-/*global Markdown:true BetterMarkdown:true */
+/*global Markdown:true, hljs:true */
 
 /**
   Contains methods to help us with markdown formatting.
@@ -9,7 +9,8 @@
 **/
 var _validClasses = {},
     _validIframes = [],
-    _validTags = {};
+    _validTags = {},
+    _decoratedCaja = false;
 
 function validateAttribute(tagName, attribName, value) {
   var tag = _validTags[tagName];
@@ -28,7 +29,7 @@ function validateAttribute(tagName, attribName, value) {
     // data-* attributes
     if (tag) {
       var allowed = tag[attribName] || tag['data-*'];
-      if (allowed === value || allowed.indexOf('*') !== -1) { return value; }
+      if (allowed && (allowed === value || allowed.indexOf('*') !== -1)) { return value; }
     }
   }
 
@@ -164,6 +165,9 @@ Discourse.Markdown = {
   urlAllowed: function (uri, effect, ltype, hints) {
     var url = typeof(uri) === "string" ? uri : uri.toString();
 
+    // escape single quotes
+    url = url.replace(/'/g, "%27");
+
     // whitelist some iframe only
     if (hints && hints.XML_TAG === "iframe" && hints.XML_ATTR === "src") {
       for (var i = 0, length = _validIframes.length; i < length; i++) {
@@ -183,16 +187,6 @@ Discourse.Markdown = {
   },
 
   /**
-    Checks to see if a name, class or id is allowed in the cooked content
-
-    @method nameIdClassAllowed
-    @param {String} tagName to check
-    @param {String} attribName to check
-    @param {String} value to check
-  **/
-
-
-  /**
     Sanitize text using the sanitizer
 
     @method sanitize
@@ -204,6 +198,20 @@ Discourse.Markdown = {
 
     // Allow things like <3 and <_<
     text = text.replace(/<([^A-Za-z\/\!]|$)/g, "&lt;$1");
+
+    // The first time, let's add some more whitelisted tags
+    if (!_decoratedCaja) {
+
+      // Add anything whitelisted to the list of elements if it's not in there
+      // already.
+      var elements = window.html4.ELEMENTS;
+      Object.keys(_validTags).forEach(function(t) {
+        if (!elements[t]) {
+          elements[t] = 0;
+        }
+      });
+      _decoratedCaja = true;
+    }
 
     return window.html_sanitize(text, Discourse.Markdown.urlAllowed, validateAttribute);
   },
@@ -226,6 +234,7 @@ Discourse.Markdown = {
   }
 
 };
+
 RSVP.EventTarget.mixin(Discourse.Markdown);
 
 Discourse.Markdown.whiteListTag('a', 'class', 'attachment');
@@ -234,10 +243,21 @@ Discourse.Markdown.whiteListTag('a', 'class', 'onebox');
 Discourse.Markdown.whiteListTag('a', 'class', 'mention');
 
 Discourse.Markdown.whiteListTag('a', 'data-bbcode');
+Discourse.Markdown.whiteListTag('a', 'name');
+
+Discourse.Markdown.whiteListTag('img', 'src', /^data:image.*/i);
 
 Discourse.Markdown.whiteListTag('div', 'class', 'title');
 Discourse.Markdown.whiteListTag('div', 'class', 'quote-controls');
-Discourse.Markdown.whiteListTag('code', 'class', '*');
+
+// explicitly whitelist classes we need allowed through for
+// syntax highlighting, grabbed from highlight.js
+hljs.listLanguages().forEach(function (language) {
+  Discourse.Markdown.whiteListTag('code', 'class', language);
+});
+Discourse.Markdown.whiteListTag('code', 'class', 'text');
+Discourse.Markdown.whiteListTag('code', 'class', 'lang-auto');
+
 Discourse.Markdown.whiteListTag('span', 'class', 'mention');
 Discourse.Markdown.whiteListTag('span', 'class', 'spoiler');
 Discourse.Markdown.whiteListTag('div', 'class', 'spoiler');
@@ -249,6 +269,7 @@ Discourse.Markdown.whiteListTag('span', 'bbcode-i');
 Discourse.Markdown.whiteListTag('span', 'bbcode-u');
 Discourse.Markdown.whiteListTag('span', 'bbcode-s');
 
-Discourse.Markdown.whiteListTag('span', 'class', /bbcode-size-\d+/);
+// used for pinned topics
+Discourse.Markdown.whiteListTag('span', 'class', 'excerpt');
 
 Discourse.Markdown.whiteListIframe(/^(https?:)?\/\/www\.google\.com\/maps\/embed\?.+/i);

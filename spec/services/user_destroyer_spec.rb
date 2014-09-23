@@ -50,18 +50,6 @@ describe UserDestroyer do
         StaffActionLogger.any_instance.expects(:log_user_deletion).with(@user, anything).once
         destroy
       end
-
-      it 'should unregister the nickname as the discourse hub if hub integration is enabled' do
-        SiteSetting.stubs(:call_discourse_hub?).returns(true)
-        DiscourseHub.expects(:unregister_username).with(@user.username)
-        destroy
-      end
-
-      it 'should not try to unregister the nickname as the discourse hub if hub integration is disabled' do
-        SiteSetting.stubs(:call_discourse_hub?).returns(false)
-        DiscourseHub.expects(:unregister_username).never
-        destroy
-      end
     end
 
     shared_examples "email block list" do
@@ -93,6 +81,10 @@ describe UserDestroyer do
 
       context "delete_posts is false" do
         subject(:destroy) { UserDestroyer.new(@admin).destroy(@user) }
+        before do
+          @user.stubs(:post_count).returns(1)
+          @user.stubs(:first_post_created_at).returns(Time.zone.now)
+        end
 
         it 'should not delete the user' do
           expect { destroy rescue nil }.to_not change { User.count }
@@ -104,11 +96,6 @@ describe UserDestroyer do
 
         it 'should not log the action' do
           StaffActionLogger.any_instance.expects(:log_user_deletion).never
-          destroy rescue nil
-        end
-
-        it 'should not unregister the user at the discourse hub' do
-          DiscourseHub.expects(:unregister_username).never
           destroy rescue nil
         end
       end
@@ -158,6 +145,16 @@ describe UserDestroyer do
       end
     end
 
+    context 'user has no posts, but user_stats table has post_count > 0' do
+      before do
+        # out of sync user_stat data shouldn't break UserDestroyer
+        @user.user_stat.update_attribute(:post_count, 1)
+      end
+      subject(:destroy) { UserDestroyer.new(@user).destroy(@user, {delete_posts: false}) }
+
+      include_examples "successfully destroy a user"
+    end
+
     context 'user has deleted posts' do
       let!(:deleted_post) { Fabricate(:post, user: @user, deleted_at: 1.hour.ago) }
       it "should mark the user's deleted posts as belonging to a nuked user" do
@@ -189,11 +186,6 @@ describe UserDestroyer do
         it 'should not log the action' do
           StaffActionLogger.any_instance.expects(:log_user_deletion).never
           destroy
-        end
-
-        it 'should not unregister the user at the discourse hub' do
-          DiscourseHub.expects(:unregister_username).never
-          destroy rescue nil
         end
       end
     end

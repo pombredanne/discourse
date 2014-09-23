@@ -143,7 +143,7 @@ describe User do
 
     describe 'allow custom minimum username length from site settings' do
       before do
-        @custom_min = User::GLOBAL_USERNAME_LENGTH_RANGE.begin - 1
+        @custom_min = 2
         SiteSetting.min_username_length = @custom_min
       end
 
@@ -160,11 +160,6 @@ describe User do
       it 'should not allow a longer username than limit' do
         result = user.change_username('a' * (User.username_length.end + 1))
         result.should be_false
-      end
-
-      it 'should use default length for validation if enforce_global_nicknames is true' do
-        SiteSetting.enforce_global_nicknames = true
-        User::username_length.should == User::GLOBAL_USERNAME_LENGTH_RANGE
       end
     end
   end
@@ -210,7 +205,6 @@ describe User do
 
     it { should be_valid }
     it { should_not be_admin }
-    it { should_not be_active }
     it { should_not be_approved }
     its(:approved_at) { should be_blank }
     its(:approved_by_id) { should be_blank }
@@ -242,6 +236,12 @@ describe User do
 
       its(:email_tokens) { should be_present }
     end
+
+    it "downcases email addresses" do
+      user = Fabricate.build(:user, email: 'Fancy.Caps.4.U@gmail.com')
+      user.save
+      user.reload.email.should == 'fancy.caps.4.u@gmail.com'
+    end
   end
 
   describe 'ip address validation' do
@@ -262,11 +262,11 @@ describe User do
   describe "trust levels" do
 
     # NOTE be sure to use build to avoid db calls
-    let(:user) { Fabricate.build(:user, trust_level: TrustLevel.levels[:newuser]) }
+    let(:user) { Fabricate.build(:user, trust_level: TrustLevel[0]) }
 
     it "sets to the default trust level setting" do
-      SiteSetting.expects(:default_trust_level).returns(TrustLevel.levels[:elder])
-      User.new.trust_level.should == TrustLevel.levels[:elder]
+      SiteSetting.default_trust_level = TrustLevel[4]
+      User.new.trust_level.should == TrustLevel[4]
     end
 
     describe 'has_trust_level?' do
@@ -276,22 +276,22 @@ describe User do
       end
 
       it "is true for your basic level" do
-        user.has_trust_level?(:newuser).should be_true
+        user.has_trust_level?(TrustLevel[0]).should be_true
       end
 
       it "is false for a higher level" do
-        user.has_trust_level?(:regular).should be_false
+        user.has_trust_level?(TrustLevel[2]).should be_false
       end
 
       it "is true if you exceed the level" do
-        user.trust_level = TrustLevel.levels[:elder]
-        user.has_trust_level?(:newuser).should be_true
+        user.trust_level = TrustLevel[4]
+        user.has_trust_level?(TrustLevel[1]).should be_true
       end
 
       it "is true for an admin even with a low trust level" do
-        user.trust_level = TrustLevel.levels[:new]
+        user.trust_level = TrustLevel[0]
         user.admin = true
-        user.has_trust_level?(:elder).should be_true
+        user.has_trust_level?(TrustLevel[1]).should be_true
       end
 
     end
@@ -303,7 +303,7 @@ describe User do
 
       it "is a moderator if the user level is moderator" do
         user.moderator = true
-        user.has_trust_level?(:elder).should be_true
+        user.has_trust_level?(TrustLevel[4]).should be_true
       end
 
       it "is staff if the user is an admin" do
@@ -755,12 +755,15 @@ describe User do
       expect(found_user).to eq bob
 
       found_user = User.find_by_username_or_email('Bob@Example.com')
-      expect(found_user).to be_nil
+      expect(found_user).to eq bob
 
       found_user = User.find_by_username_or_email('bob1')
       expect(found_user).to be_nil
 
       found_user = User.find_by_email('bob@Example.com')
+      expect(found_user).to eq bob
+
+      found_user = User.find_by_email('BOB@Example.com')
       expect(found_user).to eq bob
 
       found_user = User.find_by_email('bob')
@@ -841,7 +844,7 @@ describe User do
   end
 
   describe "posted too much in topic" do
-    let!(:user) { Fabricate(:user, trust_level: TrustLevel.levels[:newuser]) }
+    let!(:user) { Fabricate(:user, trust_level: TrustLevel[0]) }
     let!(:topic) { Fabricate(:post).topic }
 
     before do
@@ -874,7 +877,7 @@ describe User do
 
     it "returns false for a user who created the topic" do
       topic_user = topic.user
-      topic_user.trust_level = TrustLevel.levels[:newuser]
+      topic_user.trust_level = TrustLevel[0]
       topic.user.posted_too_much_in_topic?(topic.id).should be_false
     end
 
@@ -1131,6 +1134,46 @@ describe User do
       user.reload
       user.uploaded_avatar_id.should == nil
     end
+  end
+
+  describe "#purge_inactive" do
+    let!(:user) { Fabricate(:user) }
+    let!(:inactive) { Fabricate(:user, active: false) }
+    let!(:inactive_old) { Fabricate(:user, active: false, created_at: 1.month.ago) }
+
+    it 'should only remove old, inactive users' do
+      User.purge_inactive
+      all_users = User.all
+      all_users.include?(user).should be_true
+      all_users.include?(inactive).should be_true
+      all_users.include?(inactive_old).should be_false
+    end
+  end
+
+  describe "hash_passwords" do
+
+    let(:too_long) { "x" * (User.max_password_length + 1) }
+
+    def hash(password, salt)
+      User.new.send(:hash_password, password, salt)
+    end
+
+    it "returns the same hash for the same password and salt" do
+      hash('poutine', 'gravy').should == hash('poutine', 'gravy')
+    end
+
+    it "returns a different hash for the same salt and different password" do
+      hash('poutine', 'gravy').should_not == hash('fries', 'gravy')
+    end
+
+    it "returns a different hash for the same password and different salt" do
+      hash('poutine', 'gravy').should_not == hash('poutine', 'cheese')
+    end
+
+    it "raises an error when passwords are too long" do
+      -> { hash(too_long, 'gravy') }.should raise_error
+    end
+
   end
 
 end

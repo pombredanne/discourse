@@ -60,7 +60,7 @@
       </div>
     </div>
 
-    {{#unless Discourse.SiteSettings.enable_sso }}
+    {{#if canChangePassword}}
     <div class="control-group pref-password">
       <label class="control-label">{{i18n user.password.title}}</label>
       <div class="controls">
@@ -74,7 +74,7 @@
         {{passwordProgress}}
       </div>
     </div>
-    {{/unless}}
+    {{/if}}
 
     <div class="control-group pref-avatar">
       <label class="control-label">{{i18n user.avatar.title}}</label>
@@ -82,13 +82,13 @@
         {{bound-avatar model "large"}}
         {{#if allowAvatarUpload}}
           <button {{action showAvatarSelector}} class="btn pad-left no-text"><i class="fa fa-pencil"></i></button>
-        {{else}}
+        {{else}} {{#unless ssoOverridesAvatar}}
           <a href="//gravatar.com/emails" target="_blank" title="{{i18n user.change_avatar.gravatar_title}}" class="btn no-text"><i class="fa fa-pencil"></i></a>
-        {{/if}}
+        {{/unless}} {{/if}}
       </div>
     </div>
 
-    {{#if Discourse.SiteSettings.allow_profile_backgrounds}}
+    {{#if allowBackgrounds}}
     <div class="control-group pref-profile-bg">
       <label class="control-label">{{i18n user.change_profile_background.title}}</label>
       <div class="controls">
@@ -167,6 +167,9 @@
       {{preference-checkbox labelKey="user.enable_quoting" checked=enable_quoting}}
       {{preference-checkbox labelKey="user.dynamic_favicon" checked=dynamic_favicon}}
       {{preference-checkbox labelKey="user.disable_jump_reply" checked=disable_jump_reply}}
+      {{#unless editHistoryVisible}}
+        {{preference-checkbox labelKey="user.edit_history_public" checked=edit_history_public}}
+      {{/unless}}
       {{plugin-outlet "user_custom_preferences"}}
     </div>
 

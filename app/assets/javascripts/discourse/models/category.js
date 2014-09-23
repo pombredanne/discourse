@@ -1,18 +1,12 @@
-/**
-  A data model that represents a category
-
-  @class Category
-  @extends Discourse.Model
-  @namespace Discourse
-  @module Discourse
-**/
 Discourse.Category = Discourse.Model.extend({
 
   init: function() {
     this._super();
-    this.set("availableGroups", Em.A(this.get("available_groups")));
+    var availableGroups = Em.A(this.get("available_groups"));
 
+    this.set("availableGroups", availableGroups);
     this.set("permissions", Em.A(_.map(this.group_permissions, function(elem){
+      availableGroups.removeObject(elem.group_name);
       return {
                 group_name: elem.group_name,
                 permission: Discourse.PermissionType.create({id: elem.permission_type})
@@ -33,6 +27,10 @@ Discourse.Category = Discourse.Model.extend({
 
   url: function() {
     return Discourse.getURL("/category/") + Discourse.Category.slugFor(this);
+  }.property('name'),
+
+  nameLower: function() {
+    return this.get('name').toLowerCase();
   }.property('name'),
 
   unreadUrl: function() {
@@ -70,7 +68,8 @@ Discourse.Category = Discourse.Model.extend({
         email_in_allow_strangers: this.get('email_in_allow_strangers'),
         parent_category_id: this.get('parent_category_id'),
         logo_url: this.get('logo_url'),
-        background_url: this.get('background_url')
+        background_url: this.get('background_url'),
+        allow_badges: this.get('allow_badges')
       },
       type: this.get('id') ? 'PUT' : 'POST'
     });
@@ -132,11 +131,11 @@ Discourse.Category = Discourse.Model.extend({
   }.property(),
 
   unreadTopics: function(){
-    return this.get('topicTrackingState').countUnread(this.get('name'));
+    return this.get('topicTrackingState').countUnread(this.get('id'));
   }.property('topicTrackingState.messageCount'),
 
   newTopics: function(){
-    return this.get('topicTrackingState').countNew(this.get('name'));
+    return this.get('topicTrackingState').countNew(this.get('id'));
   }.property('topicTrackingState.messageCount'),
 
   topicStatsTitle: function() {
@@ -157,7 +156,7 @@ Discourse.Category = Discourse.Model.extend({
 
   topicCountStats: function() {
     return this.countStats('topics');
-  }.property('posts_year', 'posts_month', 'posts_week', 'posts_day'),
+  }.property('topics_year', 'topics_month', 'topics_week', 'topics_day'),
 
   setNotification: function(notification_level) {
     var url = "/category/" + this.get('id')+"/notifications";
@@ -189,6 +188,8 @@ Discourse.Category = Discourse.Model.extend({
   }.property('id')
 });
 
+var _uncategorized;
+
 Discourse.Category.reopenClass({
 
   NotificationLevel: {
@@ -196,6 +197,11 @@ Discourse.Category.reopenClass({
     TRACKING: 2,
     REGULAR: 1,
     MUTED: 0
+  },
+
+  findUncategorized: function() {
+    _uncategorized = _uncategorized || Discourse.Category.list().findBy('id', Discourse.Site.currentProp('uncategorized_category_id'));
+    return _uncategorized;
   },
 
   slugFor: function(category) {
@@ -219,15 +225,18 @@ Discourse.Category.reopenClass({
     return Discourse.Site.currentProp('sortedCategories');
   },
 
+  idMap: function() {
+    return Discourse.Site.currentProp('categoriesById');
+  },
+
   findSingleBySlug: function(slug) {
     return Discourse.Category.list().find(function(c) {
       return Discourse.Category.slugFor(c) === slug;
     });
   },
 
-  // TODO: optimise, slow for no real reason
-  findById: function(id){
-    return Discourse.Category.list().findBy('id', id);
+  findById: function(id) {
+    return Discourse.Category.idMap()[id];
   },
 
   findByIds: function(ids){
@@ -242,7 +251,6 @@ Discourse.Category.reopenClass({
   },
 
   findBySlug: function(slug, parentSlug) {
-
     var categories = Discourse.Category.list(),
         category;
 
@@ -270,8 +278,8 @@ Discourse.Category.reopenClass({
     return category;
   },
 
-  reloadBySlugOrId: function(slugOrId) {
-    return Discourse.ajax("/category/" + slugOrId + "/show.json").then(function (result) {
+  reloadById: function(id) {
+    return Discourse.ajax("/category/" + id + "/show.json").then(function (result) {
       return Discourse.Category.create(result.category);
     });
   }

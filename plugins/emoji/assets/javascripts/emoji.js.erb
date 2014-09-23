@@ -1,5 +1,4 @@
 (function() {
-
   var emoji = <%= Dir.glob(File.expand_path("../../../public/images/*.png", __FILE__)).map{|f| File.basename(f).split(".")[0]}.inspect %>;
 
   function imageFor(code) {
@@ -42,7 +41,7 @@
       var lastToken = prev[prev.length-1];
       if (lastToken && lastToken.charAt) {
         var lastChar = lastToken.charAt(lastToken.length-1);
-        if (lastChar !== ' ') return false;
+        if (lastChar !== ' ' && lastChar !== "\n") return false;
       }
     }
     return true;
@@ -55,6 +54,7 @@
     } else {
       var replacement = translations[t];
       Discourse.Dialect.inlineReplace(t, function (token, match, prev) {
+        if (!Discourse.SiteSettings.enable_emoji) { return token; }
         return checkPrev(prev) ? imageFor(replacement) : token;
       });
     }
@@ -69,6 +69,8 @@
                                            }).join("|"));
 
   Discourse.Dialect.registerInline(':', function(text, match, prev) {
+    if (!Discourse.SiteSettings.enable_emoji) { return; }
+
     var endPos = text.indexOf(':', 1),
         firstSpace = text.search(/\s/),
         contents;
@@ -80,6 +82,10 @@
       translationColonRegexp.lastIndex = 0;
       var m = translationColonRegexp.exec(text);
       if (m && m[0] && text.indexOf(m[0]) === 0) {
+
+        // Check outer edge
+        var lastChar = text.charAt(m[0].length);
+        if (lastChar && (lastChar !== ' ' && lastChar !== "\n")) return;
         contents = imageFor(translationsWithColon[m[0]]);
         if (contents) {
           return [m[0].length, contents];
@@ -100,6 +106,7 @@
   var ComposerView = (Discourse && Discourse.ComposerView) || (typeof require !== "undefined" && require('discourse/views/composer').default);
   if (ComposerView) {
     ComposerView.on("initWmdEditor", function(event){
+      if (!Discourse.SiteSettings.enable_emoji) { return; }
 
       var baseUrl = Discourse.getURL("/");
 
@@ -108,7 +115,7 @@
                                           "{{#each options}}" +
                                               "<li>" +
                                                 "<a href='#'>" +
-                                                "<img src='" + baseUrl + "plugins/emoji/images/{{this}}.png' class='emoji'> " +
+                                                "<img src='" + baseUrl + "plugins/emoji/images/{{this}}.png?v=1' class='emoji'> " +
                                                 "{{this}}</a>" +
                                               "</li>" +
                                           "{{/each}}" +

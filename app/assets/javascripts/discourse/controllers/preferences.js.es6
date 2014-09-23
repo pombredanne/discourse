@@ -1,15 +1,12 @@
-/**
-  This controller supports actions related to updating one's preferences
+import ObjectController from 'discourse/controllers/object';
 
-  @class PreferencesController
-  @extends Discourse.ObjectController
-  @namespace Discourse
-  @module Discourse
-**/
-export default Discourse.ObjectController.extend({
+export default ObjectController.extend({
 
   allowAvatarUpload: Discourse.computed.setting('allow_uploaded_avatars'),
   allowUserLocale: Discourse.computed.setting('allow_user_locale'),
+  ssoOverridesAvatar: Discourse.computed.setting('sso_overrides_avatar'),
+  allowBackgrounds: Discourse.computed.setting('allow_profile_backgrounds'),
+  editHistoryVisible: Discourse.computed.setting('edit_history_visible_to_public'),
 
   selectedCategories: function(){
     return [].concat(this.get("watchedCategories"), this.get("trackedCategories"), this.get("mutedCategories"));
@@ -32,8 +29,12 @@ export default Discourse.ObjectController.extend({
   canEditName: Discourse.computed.setting('enable_names'),
 
   canSelectTitle: function() {
-    return Discourse.SiteSettings.enable_badges && this.get('model.badge_count') > 0;
+    return Discourse.SiteSettings.enable_badges && this.get('model.has_title_badges');
   }.property('model.badge_count'),
+
+  canChangePassword: function() {
+    return !Discourse.SiteSettings.enable_sso && Discourse.SiteSettings.enable_local_logins;
+  }.property(),
 
   availableLocales: function() {
     return Discourse.SiteSettings.available_locales.split('|').map( function(s) {
@@ -85,10 +86,14 @@ export default Discourse.ObjectController.extend({
         }
         self.set('bio_cooked', Discourse.Markdown.cook(Discourse.Markdown.sanitize(self.get('bio_raw'))));
         self.set('saved', true);
-      }, function() {
+      }, function(error) {
         // model failed to save
         self.set('saving', false);
-        alert(I18n.t('generic_error'));
+        if (error && error.responseText) {
+          alert($.parseJSON(error.responseText).errors[0]);
+        } else {
+          alert(I18n.t('generic_error'));
+        }
       });
     },
 

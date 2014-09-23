@@ -104,12 +104,13 @@ class TopicLink < ActiveRecord::Base
 
       PrettyText
         .extract_links(post.cooked)
-        .map{|u| [u, URI.parse(u)] rescue nil}
-        .reject{|u,p| p.nil?}
-        .uniq{|u,p| u}
-        .each do |url, parsed|
+        .map{|u| [u, URI.parse(u.url)] rescue nil}
+        .reject{|_, p| p.nil?}
+        .uniq{|_, p| p}
+        .each do |link, parsed|
         begin
 
+          url = link.url
           internal = false
           topic_id = nil
           post_number = nil
@@ -157,7 +158,9 @@ class TopicLink < ActiveRecord::Base
                            domain: parsed.host || Discourse.current_hostname,
                            internal: internal,
                            link_topic_id: topic_id,
-                           link_post_id: reflected_post.try(:id))
+                           link_post_id: reflected_post.try(:id),
+                           quote: link.is_quote
+                          )
 
           # Create the reflection if we can
           if topic_id.present?
@@ -217,13 +220,14 @@ end
 #  domain        :string(100)      not null
 #  internal      :boolean          default(FALSE), not null
 #  link_topic_id :integer
-#  created_at    :datetime
-#  updated_at    :datetime
+#  created_at    :datetime         not null
+#  updated_at    :datetime         not null
 #  reflection    :boolean          default(FALSE)
 #  clicks        :integer          default(0), not null
 #  link_post_id  :integer
 #  title         :string(255)
 #  crawled_at    :datetime
+#  quote         :boolean          default(FALSE), not null
 #
 # Indexes
 #

@@ -15,14 +15,14 @@ describe UploadsController do
       let(:logo) do
         ActionDispatch::Http::UploadedFile.new({
           filename: 'logo.png',
-          tempfile: File.new("#{Rails.root}/spec/fixtures/images/logo.png")
+          tempfile: file_from_fixtures("logo.png")
         })
       end
 
       let(:logo_dev) do
         ActionDispatch::Http::UploadedFile.new({
           filename: 'logo-dev.png',
-          tempfile: File.new("#{Rails.root}/spec/fixtures/images/logo-dev.png")
+          tempfile: file_from_fixtures("logo-dev.png")
         })
       end
 
@@ -135,6 +135,18 @@ describe UploadsController do
       controller.expects(:send_file)
 
       get :show, site: "default", id: 42, sha: "66b3ed1503efc936", extension: "zip"
+    end
+
+    context "prevent anons from downloading files" do
+
+      before { SiteSetting.stubs(:prevent_anons_from_downloading_files).returns(true) }
+
+      it "returns 404 when an anonymous user tries to download a file" do
+        Upload.expects(:find_by).never
+        get :show, site: "default", id: 2, sha: "1234567890abcdef", extension: "pdf"
+        response.response_code.should == 404
+      end
+
     end
 
   end

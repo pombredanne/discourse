@@ -7,20 +7,17 @@
 Discourse.Route.buildRoutes(function() {
   var router = this;
 
-  // Generate static page routes
-  // e.g., faq, tos, privacy, login
-  _.each(Discourse.StaticController.PAGES, function (page) {
-    router.route(page, { path: '/' + page });
-  });
-
   // Error page
   this.route('exception', { path: '/exception' });
+
+  this.resource('about', { path: '/about' });
 
   // Topic routes
   this.resource('topic', { path: '/t/:slug/:id' }, function() {
     this.route('fromParams', { path: '/' });
     this.route('fromParamsNear', { path: '/:nearPost' });
   });
+  this.resource('topicBySlug', { path: '/t/:slug' });
 
   this.resource('discovery', { path: '/' }, function() {
     router = this;
@@ -73,6 +70,9 @@ Discourse.Route.buildRoutes(function() {
     });
 
     this.route('badges');
+    this.route('notifications');
+    this.route('flaggedPosts', { path: '/flagged-posts' });
+    this.route('deletedPosts', { path: '/deleted-posts' });
 
     this.resource('userPrivateMessages', { path: '/private-messages' }, function() {
       this.route('mine');
@@ -91,6 +91,10 @@ Discourse.Route.buildRoutes(function() {
 
   this.route('signup', {path: '/signup'});
   this.route('login', {path: '/login'});
+  this.route('faq', {path: '/faq'});
+  this.route('tos', {path: '/tos'});
+  this.route('privacy', {path: '/privacy'});
+  this.route('guidelines', {path: '/guidelines'});
 
   this.resource('badges', function() {
     this.route('show', {path: '/:id/:slug'});

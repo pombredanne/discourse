@@ -1,29 +1,31 @@
-{{#groupedEach model.content}}
+{{#grouped-each model.content}}
   <div {{bind-attr class=":item hidden deleted moderator_action"}}>
     <div class='clearfix info'>
-      <a href="{{unbound userUrl}}" class='avatar-link'><div class='avatar-wrapper'>{{avatar this imageSize="large" extraClasses="actor" ignoreTitle="true"}}</div></a>
-      <span class='time'>{{date path="created_at" leaveAgo="true"}}</span>
+      <a href="{{unbound userUrl}}" data-user-expand="{{unbound username}}" class='avatar-link'><div class='avatar-wrapper'>{{avatar this imageSize="large" extraClasses="actor" ignoreTitle="true"}}</div></a>
+      <span class='time'>{{format-date path="created_at" leaveAgo="true"}}</span>
       <span class="title">
         <a href="{{unbound postUrl}}">{{unbound title}}</a>
-        {{category-link category}}
       </span>
-      <span class="type">{{unbound descriptionHtml}}</span>
+      <span class="category">{{category-link category}}</span>
     </div>
     <p class='excerpt'>{{{unbound excerpt}}}</p>
-    {{#groupedEach children}}
+    {{#grouped-each children}}
       <div class='child-actions'>
         <i class="icon {{unbound icon}}"></i>
-        {{#groupedEach items}}
+        {{#grouped-each items}}
           {{#if bookmarkType}}
             <button class="btn btn-default remove-bookmark" {{action removeBookmark this}}>
               <i class="fa fa-times"></i>
               {{i18n "bookmarks.remove"}}
             </button>
           {{/if}}
-          <a href="{{unbound userUrl}}" class='avatar-link'><div class='avatar-wrapper'>{{avatar this imageSize="tiny" extraClasses="actor" ignoreTitle="true"}}</div></a>
+          <a href="{{unbound userUrl}}" data-user-expand="{{unbound username}}" class='avatar-link'><div class='avatar-wrapper'>{{avatar this imageSize="tiny" extraClasses="actor" ignoreTitle="true"}}</div></a>
           {{#if edit_reason}} &mdash; <span class="edit-reason">{{unbound edit_reason}}</span>{{/if}}
-        {{/groupedEach}}
+        {{/grouped-each}}
       </div>
-    {{/groupedEach}}
+    {{/grouped-each}}
   </div>
-{{/groupedEach}}
+{{/grouped-each}}
+{{#if loading}}
+  <div class='spinner'>{{i18n loading}}</div>
+{{/if}}

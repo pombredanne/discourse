@@ -1,17 +1,15 @@
-<section class='details'>
+<section {{bind-attr class=":details active::not-activated"}}>
 
-  <div class='display-row'>
-    <div class='field'>{{i18n user.username.title}}</div>
-    <div class='value'>{{username}}</div>
-    <div class='controls'>
+  <div class='user-controls'>
+    {{#if active}}
       {{#link-to 'user' model class="btn"}}
         <i class='fa fa-user'></i>
         {{i18n admin.user.show_public_profile}}
       {{/link-to}}
       {{#if can_impersonate}}
-          <button class='btn' {{action impersonate target="content"}}>
+          <button class='btn btn-danger' {{action impersonate target="content"}} title="{{i18n admin.impersonate.help}}">
             <i class='fa fa-crosshairs'></i>
-            {{i18n admin.user.impersonate}}
+            {{i18n admin.impersonate.title}}
           </button>
       {{/if}}
       {{#if currentUser.admin}}
@@ -20,12 +18,26 @@
         {{i18n admin.user.log_out}}
       </button>
       {{/if}}
+    {{/if}}
+  </div>
+
+  <div class='display-row username'>
+    <div class='field'>{{i18n user.username.title}}</div>
+    <div class='value'>{{username}}</div>
+    <div class='controls'>
+      {{#link-to 'preferences.username' model class="btn"}}
+        <i class='fa fa-pencil'></i>
+        {{i18n user.change_username.title}}
+      {{/link-to}}
     </div>
   </div>
 
-  <div class='display-row'>
+  <div class='display-row email'>
     <div class='field'>{{i18n user.email.title}}</div>
     <div class='value'><a href="mailto:{{unbound email}}">{{email}}</a></div>
+    {{#unless active}}
+      <div class='controls'>{{i18n admin.users.not_verified}}</div>
+    {{/unless}}
   </div>
 
   <div class='display-row'>
@@ -52,24 +64,25 @@
     </div>
   </div>
 
+
+  {{#if currentUser.admin}}
   <div class='display-row'>
-    <div class='field'>{{i18n admin.groups.primary}}</div>
+    <div class='field'>{{i18n admin.groups.title}}</div>
     <div class='value'>
-      {{#if custom_groups}}
-        {{combo-box content=custom_groups value=primary_group_id nameProperty="name" none="admin.groups.no_primary"}}
-      {{else}}
-        &mdash;
-      {{/if}}
+      {{admin-group-selector selected=model.groups available=availableGroups}}
     </div>
     <div class='controls'>
+      {{#if custom_groups}}
+        {{i18n admin.groups.primary}}
+        {{combo-box content=custom_groups value=primary_group_id nameProperty="name" none="admin.groups.no_primary"}}
+      {{/if}}
       {{#if primaryGroupDirty}}
-        <div>
         <button class='btn ok no-text' {{action savePrimaryGroup}}><i class='fa fa-check'></i></button>
         <button class='btn cancel no-text' {{action resetPrimaryGroup}}><i class='fa fa-times'></i></button>
-        </div>
       {{/if}}
     </div>
   </div>
+  {{/if}}
 
   <div class='display-row'>
     <div class='field'>{{i18n user.ip_address.title}}</div>
@@ -101,7 +114,7 @@
         {{i18n badges.badge_count count=badge_count}}
       </div>
       <div class='controls'>
-        {{#link-to 'adminUser.badges' this class="btn"}}{{i18n admin.badges.edit_badges}}{{/link-to}}
+        {{#link-to 'adminUser.badges' this class="btn"}}<i class="fa fa-certificate"></i>{{i18n admin.badges.edit_badges}}{{/link-to}}
       </div>
     </div>
   {{/if}}
@@ -198,13 +211,13 @@
     <div class='controls'>
       {{#if can_revoke_admin}}
         <button class='btn' {{action revokeAdmin target="content"}}>
-          <i class='fa fa-trophy'></i>
+          <i class='fa fa-shield'></i>
           {{i18n admin.user.revoke_admin}}
         </button>
       {{/if}}
       {{#if can_grant_admin}}
         <button class='btn' {{action grantAdmin target="content"}}>
-          <i class='fa fa-trophy'></i>
+          <i class='fa fa-shield'></i>
           {{i18n admin.user.grant_admin}}
         </button>
       {{/if}}
@@ -217,13 +230,13 @@
     <div class='controls'>
       {{#if can_revoke_moderation}}
         <button class='btn' {{action revokeModeration target="content"}}>
-          <i class='fa fa-magic'></i>
+          <i class='fa fa-shield'></i>
           {{i18n admin.user.revoke_moderation}}
         </button>
       {{/if}}
       {{#if can_grant_moderation}}
         <button class='btn' {{action grantModeration target="content"}}>
-          <i class='fa fa-magic'></i>
+          <i class='fa fa-shield'></i>
           {{i18n admin.user.grant_moderation}}
         </button>
       {{/if}}
@@ -319,7 +332,7 @@
   </div>
   <div class='display-row'>
     <div class='field'>{{i18n admin.user.like_count}}</div>
-    <div class='value'>{{like_count}}</div>
+    <div class='value'>{{like_given_count}} / {{like_count}}</div>
   </div>
   <div class='display-row'>
     <div class='field'>{{i18n admin.user.topics_entered}}</div>
@@ -344,12 +357,12 @@
     <div class='value'>{{posts_read_count}}</div>
   </div>
   <div class='display-row'>
-    <div class='field'>{{i18n admin.user.flags_given_count}}</div>
-    <div class='value'>{{flags_given_count}}</div>
+    <div class='field'>{{i18n admin.user.warnings_received_count}}</div>
+    <div class='value'>{{warnings_received_count}}</div>
   </div>
   <div class='display-row'>
-    <div class='field'>{{i18n admin.user.flags_received_count}}</div>
-    <div class='value'>{{flags_received_count}}</div>
+    <div class='field'>{{i18n admin.user.flags_given_received_count}}</div>
+    <div class='value'>{{flags_given_count}} / {{flags_received_count}}</div>
   </div>
   <div class='display-row'>
     <div class='field'>{{i18n admin.user.private_topics_count}}</div>
@@ -364,6 +377,35 @@
     <div class='value'>{{{days_visited}}}</div>
   </div>
 </section>
+
+{{#if single_sign_on_record}}
+<section class='details'>
+  <h1>{{i18n admin.user.sso.title}}</h1>
+
+  {{#with single_sign_on_record}}
+    <div class='display-row'>
+      <div class='field'>{{i18n admin.user.sso.external_id}}</div>
+      <div class='value'>{{external_id}}</div>
+    </div>
+    <div class='display-row'>
+      <div class='field'>{{i18n admin.user.sso.external_username}}</div>
+      <div class='value'>{{external_username}}</div>
+    </div>
+    <div class='display-row'>
+      <div class='field'>{{i18n admin.user.sso.external_name}}</div>
+      <div class='value'>{{external_name}}</div>
+    </div>
+    <div class='display-row'>
+      <div class='field'>{{i18n admin.user.sso.external_email}}</div>
+      <div class='value'>{{external_email}}</div>
+    </div>
+    <div class='display-row'>
+      <div class='field'>{{i18n admin.user.sso.external_avatar_url}}</div>
+      <div class='value'>{{external_avatar_url}}</div>
+    </div>
+  {{/with}}
+</section>
+{{/if}}
 
 <section>
   <hr/>

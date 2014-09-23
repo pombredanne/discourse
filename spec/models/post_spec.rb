@@ -104,7 +104,7 @@ describe Post do
   end
 
   describe "maximum images" do
-    let(:newuser) { Fabricate(:user, trust_level: TrustLevel.levels[:newuser]) }
+    let(:newuser) { Fabricate(:user, trust_level: TrustLevel[0]) }
     let(:post_no_images) { Fabricate.build(:post, post_args.merge(user: newuser)) }
     let(:post_one_image) { post_with_body("![sherlock](http://bbc.co.uk/sherlock.jpg)", newuser) }
     let(:post_two_images) { post_with_body("<img src='http://discourse.org/logo.png'> <img src='http://bbc.co.uk/sherlock.jpg'>", newuser) }
@@ -158,7 +158,7 @@ describe Post do
         end
 
         it "doesn't allow a new user to edit their post to insert an image" do
-          post_no_images.user.trust_level = TrustLevel.levels[:new]
+          post_no_images.user.trust_level = TrustLevel[0]
           post_no_images.save
           -> {
             post_no_images.revise(post_no_images.user, post_two_images.raw)
@@ -168,7 +168,7 @@ describe Post do
       end
 
       it "allows more images from a not-new account" do
-        post_two_images.user.trust_level = TrustLevel.levels[:basic]
+        post_two_images.user.trust_level = TrustLevel[1]
         post_two_images.should be_valid
       end
 
@@ -177,7 +177,7 @@ describe Post do
   end
 
   describe "maximum attachments" do
-    let(:newuser) { Fabricate(:user, trust_level: TrustLevel.levels[:newuser]) }
+    let(:newuser) { Fabricate(:user, trust_level: TrustLevel[0]) }
     let(:post_no_attachments) { Fabricate.build(:post, post_args.merge(user: newuser)) }
     let(:post_one_attachment) { post_with_body('<a class="attachment" href="/uploads/default/1/2082985.txt">file.txt</a>', newuser) }
     let(:post_two_attachments) { post_with_body('<a class="attachment" href="/uploads/default/2/20947092.log">errors.log</a> <a class="attachment" href="/uploads/default/3/283572385.3ds">model.3ds</a>', newuser) }
@@ -206,7 +206,7 @@ describe Post do
         end
 
         it "doesn't allow a new user to edit their post to insert an attachment" do
-          post_no_attachments.user.trust_level = TrustLevel.levels[:new]
+          post_no_attachments.user.trust_level = TrustLevel[0]
           post_no_attachments.save
           -> {
             post_no_attachments.revise(post_no_attachments.user, post_two_attachments.raw)
@@ -216,7 +216,7 @@ describe Post do
       end
 
       it "allows more attachments from a not-new account" do
-        post_two_attachments.user.trust_level = TrustLevel.levels[:basic]
+        post_two_attachments.user.trust_level = TrustLevel[1]
         post_two_attachments.should be_valid
       end
 
@@ -225,7 +225,7 @@ describe Post do
   end
 
   context "links" do
-    let(:newuser) { Fabricate(:user, trust_level: TrustLevel.levels[:newuser]) }
+    let(:newuser) { Fabricate(:user, trust_level: TrustLevel[0]) }
     let(:no_links) { post_with_body("hello world my name is evil trout", newuser) }
     let(:one_link) { post_with_body("[jlawr](http://www.imdb.com/name/nm2225369)", newuser) }
     let(:two_links) { post_with_body("<a href='http://disneyland.disney.go.com/'>disney</a> <a href='http://reddit.com'>reddit</a>", newuser)}
@@ -292,7 +292,7 @@ describe Post do
 
 
   describe "maximum links" do
-    let(:newuser) { Fabricate(:user, trust_level: TrustLevel.levels[:newuser]) }
+    let(:newuser) { Fabricate(:user, trust_level: TrustLevel[0]) }
     let(:post_one_link) { post_with_body("[sherlock](http://www.bbc.co.uk/programmes/b018ttws)", newuser) }
     let(:post_two_links) { post_with_body("<a href='http://discourse.org'>discourse</a> <a href='http://twitter.com'>twitter</a>", newuser) }
     let(:post_with_mentions) { post_with_body("hello @#{newuser.username} how are you doing?", newuser) }
@@ -330,7 +330,7 @@ describe Post do
       end
 
       it "allows multiple images for basic accounts" do
-        post_two_links.user.trust_level = TrustLevel.levels[:basic]
+        post_two_links.user.trust_level = TrustLevel[1]
         post_two_links.should be_valid
       end
 
@@ -382,7 +382,7 @@ describe Post do
 
     context "max mentions" do
 
-      let(:newuser) { Fabricate(:user, trust_level: TrustLevel.levels[:newuser]) }
+      let(:newuser) { Fabricate(:user, trust_level: TrustLevel[0]) }
       let(:post_with_one_mention) { post_with_body("@Jake is the person I'm mentioning", newuser) }
       let(:post_with_two_mentions) { post_with_body("@Jake @Finn are the people I'm mentioning", newuser) }
 
@@ -408,12 +408,12 @@ describe Post do
         end
 
         it "allows vmax_mentions_per_post mentions" do
-          post_with_one_mention.user.trust_level = TrustLevel.levels[:basic]
+          post_with_one_mention.user.trust_level = TrustLevel[1]
           post_with_one_mention.should be_valid
         end
 
         it "doesn't allow to have more than max_mentions_per_post mentions" do
-          post_with_two_mentions.user.trust_level = TrustLevel.levels[:basic]
+          post_with_two_mentions.user.trust_level = TrustLevel[1]
           post_with_two_mentions.should_not be_valid
         end
       end
@@ -636,10 +636,6 @@ describe Post do
         reply.quote_count.should == 1
       end
 
-      it "isn't quoteless" do
-        reply.should_not be_quoteless
-      end
-
       it 'has a reply to the user of the original user' do
         reply.reply_to_user.should == post.user
       end
@@ -763,10 +759,18 @@ describe Post do
       post.cooked.should =~ /nofollow/
     end
 
-    it "should not add nofollow for trust level 3 and higher" do
+    it "when tl3_links_no_follow is false, should not add nofollow for trust level 3 and higher" do
+      SiteSetting.stubs(:tl3_links_no_follow).returns(false)
       post.user.trust_level = 3
       post.save
       (post.cooked =~ /nofollow/).should be_false
+    end
+
+    it "when tl3_links_no_follow is true, should add nofollow for trust level 3 and higher" do
+      SiteSetting.stubs(:tl3_links_no_follow).returns(true)
+      post.user.trust_level = 3
+      post.save
+      (post.cooked =~ /nofollow/).should be_true
     end
   end
 
@@ -819,6 +823,8 @@ describe Post do
       Post.exec_sql("UPDATE posts SET cooked = 'frogs' WHERE id = ?", post.id)
       post.reload
 
+      post.expects(:publish_change_to_clients!).with(:rebaked)
+
       result = post.rebake!
 
       post.baked_at.should_not == first_baked
@@ -840,6 +846,25 @@ describe Post do
       Post.rebake_old(100)
       post.reload
       post.baked_at.should == baked
+    end
+  end
+
+  describe ".unhide!" do
+    before { SiteSetting.stubs(:unique_posts_mins).returns(5) }
+
+    it "will unhide the post" do
+      post = create_post(user: Fabricate(:newuser))
+      post.update_columns(hidden: true, hidden_at: Time.now, hidden_reason_id: 1)
+      post.reload
+
+      post.hidden.should == true
+
+      post.expects(:publish_change_to_clients!).with(:acted)
+
+      post.unhide!
+      post.reload
+
+      post.hidden.should == false
     end
   end
 

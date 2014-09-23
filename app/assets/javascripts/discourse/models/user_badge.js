@@ -93,9 +93,9 @@ Discourse.UserBadge.reopenClass({
     @returns {Promise} a promise that resolves to an array of `Discourse.UserBadge`.
   **/
   findByUsername: function(username, options) {
-    var url = "/user_badges.json?username=" + username;
+    var url = "/users/" + username + "/badges_json.json";
     if (options && options.grouped) {
-      url += "&grouped=true";
+      url += "?grouped=true";
     }
     return Discourse.ajax(url).then(function(json) {
       return Discourse.UserBadge.createFromJson(json);
@@ -111,11 +111,11 @@ Discourse.UserBadge.reopenClass({
   **/
   findByBadgeId: function(badgeId, options) {
     if (!options) { options = {}; }
-    var url = "/user_badges.json?badge_id=" + badgeId;
-    if (options.granted_before) {
-      url = url + "&granted_before=" + encodeURIComponent(options.granted_before);
-    }
-    return Discourse.ajax(url).then(function(json) {
+    options.badge_id = badgeId;
+
+    return Discourse.ajax("/user_badges.json", {
+      data: options
+    }).then(function(json) {
       return Discourse.UserBadge.createFromJson(json);
     });
   },

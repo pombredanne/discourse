@@ -1,4 +1,6 @@
 source 'https://rubygems.org'
+# if there is a super emergency and rubygems is playing up, try
+#source 'http://production.cf.rubygems.org'
 
 module ::Kernel
   def rails_master?
@@ -65,9 +67,7 @@ unless Bundler::Dependency::PLATFORM_MAP.include? :mri_21
    end
 end
 
-# see: https://github.com/mbleigh/seed-fu/pull/54
-# taking forever to get changes upstream in seed-fu
-gem 'seed-fu-discourse', require: 'seed-fu'
+gem 'seed-fu', '~> 2.3.3'
 
 if rails_master?
   gem 'rails', git: 'https://github.com/rails/rails.git'
@@ -78,11 +78,20 @@ else
 end
 gem 'rails-observers'
 
+# Rails 4.1.6+ will relax the mail gem version requirement to `~> 2.5, >= 2.5.4`.
+# However, mail gem 2.6.x currently does not work with discourse because of the
+# reference to `Mail::RFC2822Parser` in `lib/email.rb`. This ensure discourse
+# would continue to work with Rails 4.1.6+ when it is released.
+gem 'mail', '~> 2.5.4'
+
 #gem 'redis-rails'
 gem 'hiredis'
 gem 'redis', require:  ["redis", "redis/connection/hiredis"]
 
-gem 'active_model_serializers'
+# We use some ams 0.8.0 features, need to amend code
+# to support 0.9 etc, bench needs to run and ensure no
+# perf regressions
+gem 'active_model_serializers', '~> 0.8.0'
 
 
 gem 'onebox'
@@ -102,7 +111,7 @@ gem 'fast_xs'
 
 gem 'fast_xor'
 gem 'fastimage'
-gem 'fog', '1.18.0', require: false
+gem 'fog', '1.22.1', require: false
 gem 'unf', require: false
 
 # see: https://twitter.com/samsaffron/status/412360162297393152
@@ -124,7 +133,10 @@ gem 'omniauth-openid'
 gem 'openid-redis-store'
 gem 'omniauth-facebook'
 gem 'omniauth-twitter'
-gem 'omniauth-github'
+
+# forked while https://github.com/intridea/omniauth-github/pull/41 is being upstreamd
+gem 'omniauth-github-discourse', require: 'omniauth-github'
+
 gem 'omniauth-oauth2', require: false
 gem 'omniauth-google-oauth2'
 gem 'oj'
@@ -152,8 +164,15 @@ gem 'rack-protection' # security
 # in production environments by default.
 # allow everywhere for now cause we are allowing asset debugging in prd
 group :assets do
-  gem 'sass-rails', '~> 4.0.2'
+
+  if rails_master?
+    gem 'sass-rails', git: 'https://github.com/rails/sass-rails.git'
+  else
+    gem 'sass-rails', '~> 4.0.2'
+  end
+
   gem 'uglifier'
+  gem 'rtlit', require: false # for css rtling
 end
 
 group :test do
@@ -187,10 +206,6 @@ group :development do
   gem 'foreman', require: false
 end
 
-# Gem that enables support for plugins. It is required.
-# TODO: does this really need to be a gem ?
-gem 'discourse_plugin', path: 'vendor/gems/discourse_plugin'
-
 # this is an optional gem, it provides a high performance replacement
 # to String#blank? a method that is called quite frequently in current
 # ActiveRecord, this may change in the future
@@ -208,8 +223,6 @@ gem 'htmlentities', require: false
 gem 'flamegraph', require: false
 gem 'rack-mini-profiler', require: false
 
-# used for caching, optional
-gem 'rack-cors', require: false
 gem 'unicorn', require: false
 gem 'puma', require: false
 gem 'rbtrace', require: false, platform: :mri

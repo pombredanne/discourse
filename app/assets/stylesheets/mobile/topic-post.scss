@@ -11,14 +11,6 @@
   padding: 6px 0 3px 0;
 }
 
-nav.post-controls {
-  background-color: $secondary;
-  padding: 0;
-  border-right: 1px solid scale-color-diff();
-  clear: both;
-  button {color: scale-color($primary, $lightness: 50%);
-}
-
 span.badge-posts {
   margin-right: 5px;
 }
@@ -30,19 +22,9 @@ span.badge-posts {
   }
 }
 
-
-
-button.create {
-  float: right !important;
-  margin-right: 0;
-  color: $primary;
-  padding-right: 7px;}
+nav.post-controls {
+  clear: both;
 }
-
-.create i {
-  margin-right: 5px;
-}
-
 
 button {
   border: none;
@@ -50,19 +32,18 @@ button {
   padding: 8px 10px;
   vertical-align: top;
   background: transparent;
-  float: left !important;
+  color: scale-color($primary, $lightness: 50%);
+  float: left;
   &.hidden {
     display: none;
   }
   &.admin {
     position: relative;
   }
-  &.like, &.edit, &.flag, &.delete, &.share, &.bookmark, &.create, &.admin {
-    float: right;
-  }
   &.expand-post {
     margin:10px 0 10px 0;
   }
+  &.has-like {color: $love;}
   .read-icon {
     &:before {
       font-family: "FontAwesome";
@@ -73,8 +54,6 @@ button {
         content: "\f097";
       }
     }
-    &.last-read {
-      color: $danger;}
     &.bookmarked {
       &:before {
         color: $tertiary;
@@ -83,9 +62,13 @@ button {
   }
 }
 
-nav.post-controls {
-  position: relative;
+
+/* shift post reply button to the right and make it black */
+.post-controls button.create {
+  float: right;
+  color: $primary;
 }
+
 
 .post-admin-menu {
   background-color: $secondary;
@@ -138,7 +121,11 @@ nav.post-controls {
 }
 
 a.reply-to-tab {
-  display: none;
+  position: absolute;
+  z-index: 400;
+  right: 80px;
+  color: scale-color($primary, $lightness: 50%);
+  span { display: none; }
 }
 
 a.star {
@@ -161,10 +148,6 @@ a.star {
 
 .topic-map {
 
-  .btn {
-    border-radius: 0 4px 0 4px;
-  }
-
   margin: 30px 10px 10px 10px;
   background: scale-color(scale-color-diff(), $lightness: 40%);
 
@@ -185,6 +168,11 @@ a.star {
   p,
   .participants {
     margin: 0 0 7px;
+  }
+
+  .user {
+    float: left;
+    margin-right: 10px;
   }
 
   ul {
@@ -265,6 +253,7 @@ a.star {
 
   td {
     vertical-align: top;
+    padding:1px;
   }
 
   .buttons {
@@ -345,22 +334,7 @@ span.post-count {
 
 .topic-post {
   &.moderator {
-    background-color: scale-color($highlight, $lightness: 60%);
-  }
-}
-
-.quote-button {
-  display: none;
-  position: absolute;
-  background-color: scale-color($primary, $lightness: 50%);
-  color: $primary;
-  padding: 10px;
-  width: 90px;
-  z-index: 401;
-
-  &:hover {
-    background-color: scale-color($primary, $lightness: 50%);
-    cursor: pointer;
+    background-color: scale-color($highlight, $lightness: 75%);
   }
 }
 
@@ -403,19 +377,6 @@ iframe {
   position: relative;
 }
 
-.wiki {
-  float: left;
-  padding: 10px;
-  color: #408040;
-  i {
-    float: left;
-  }
-  h3 {
-    float: left;
-    margin-left: 10px;
-  }
-}
-
 .modal-body {
   input[type=text] {
     font-size: 16px;
@@ -424,10 +385,8 @@ iframe {
   }
 }
 
-
 #share-link {
   width: 290px;
-  margin-left: 20px;
 }
 
 #selected-posts {
@@ -491,38 +450,6 @@ blockquote > *:first-child {
 }
 blockquote > *:last-child {
   margin-bottom: 0 !important;
-}
-
-.quote-controls {
-  float: right;
-  color: $primary;
-  a {
-  margin: 0;
-  }
-    .back:before,
-    .quote-other-topic:before {
-    display: inline-block;
-    margin-left: 8px;
-    color: $primary;
-    font-family: "FontAwesome";
-    position: relative;
-    z-index: 20;
-    }
-    .back:before {
-    content: "\f062";
-    }
-    .quote-other-topic:before {
-    content: "\f061";
-    }
-}
-
-
-.quote .title {
-  border-left: 5px solid scale-color($primary, $lightness: 75%);
-  background-color: scale-color-diff();
-  padding: 10px 10px 10px 12px;
-  clear: both;
-  .avatar { margin-right: 7px; }
 }
 
 .gutter { display: none; }

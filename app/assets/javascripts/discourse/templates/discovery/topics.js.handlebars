@@ -1,3 +1,19 @@
+{{#if redirectedReason}}
+  <div class="alert alert-info">{{redirectedReason}}</div>
+{{/if}}
+
+{{#if showDismissAtTop}}
+  <div class="row">
+    {{#if showDismissRead}}
+      <button title="{{i18n topics.bulk.dismiss_topics_tooltip}}" id='dismiss-topics-top' class='btn dismiss-read' {{action dismissRead "topics"}}>{{i18n topics.bulk.dismiss_topics}}</button>
+      <button title="{{i18n topics.bulk.dismiss_posts_tooltip}}" id='dismiss-posts-top' class='btn dismiss-read' {{action dismissRead "posts"}}>{{i18n topics.bulk.dismiss_posts}}</button>
+    {{/if}}
+    {{#if showResetNew}}
+      <button id='dismiss-new-top' class='btn dismiss-read' {{action resetNew}}>{{i18n topics.bulk.dismiss_new}}</button>
+    {{/if}}
+  </div>
+{{/if}}
+
 {{#if selected}}
   <div id='bulk-select'>
     <button class='btn no-text' {{action showBulkActions}}><i class="fa fa-wrench"></i></button>
@@ -6,17 +22,16 @@
 
 <div class='contents'>
   {{#if top}}
-    {{#if yearly}}<h2><i class="fa fa-calendar-o"></i>&nbsp;{{i18n filters.top.this_year}}</h2>{{/if}}
-    {{#if monthly}}<h2><i class="fa fa-calendar-o"></i>&nbsp;{{i18n filters.top.this_month}}</h2>{{/if}}
-    {{#if weekly}}<h2><i class="fa fa-calendar-o"></i>&nbsp;{{i18n filters.top.this_week}}</h2>{{/if}}
-    {{#if daily}}<h2><i class="fa fa-calendar-o"></i>&nbsp;{{i18n filters.top.today}}</h2>{{/if}}
+    <div class='top-lists'>
+      {{top-period-chooser period=period}}
+    </div>
   {{/if}}
   {{#if showTable}}
-    <table id='topic-list'>
+    <table class='topic-list'>
       <thead>
       <tr>
         {{#if currentUser}}
-        <th>
+        <th class='star'>
           {{#if canBulkSelect}}
           <button class='btn bulk-select' {{action toggleBulkSelect}} title="{{i18n topics.bulk.toggle}}"><i class='fa fa-list'></i></button>
           {{/if}}
@@ -36,13 +51,10 @@
         {{#sortable-heading sortBy="posts" number=true action="changeSort" order=order ascending=ascending}}
           {{i18n posts}}
         {{/sortable-heading}}
-        {{#sortable-heading sortBy="likes" number=true action="changeSort" order=order ascending=ascending}}
-          {{i18n likes}}
-        {{/sortable-heading}}
         {{#sortable-heading sortBy="views" number=true action="changeSort" order=order ascending=ascending}}
           {{i18n views}}
         {{/sortable-heading}}
-        {{#sortable-heading sortBy="activity" number=true colspan="2" action="changeSort" order=order ascending=ascending}}
+        {{#sortable-heading sortBy="activity" number=true action="changeSort" order=order ascending=ascending}}
           {{i18n activity}}
         {{/sortable-heading}}
       </tr>
@@ -53,8 +65,8 @@
           <tr>
             <td colspan="9">
               <div class='alert alert-info clickable' {{action showInserted}}>
-                {{countI18n new_topics_inserted count=topicTrackingState.incomingCount}}
-                {{i18n show_new_topics}}
+                {{countI18n topic_count_ suffix=topicTrackingState.filter count=topicTrackingState.incomingCount}}
+                {{i18n click_to_show}}
               </div>
             </td>
           </tr>
@@ -69,33 +81,40 @@
   {{/if}}
 </div>
 
-<footer id='topic-list-bottom'>
+<footer class='topic-list-bottom'>
   {{#if loadingMore}}
     <div class='topics-loading'>{{i18n topic.loading_more}}</div>
   {{/if}}
   {{#if allLoaded}}
     {{#if showDismissRead}}
-      <button class='btn dismiss-read' {{action dismissRead}}>{{i18n topics.bulk.dismiss_read}}</button>
+      <button title="{{i18n topics.bulk.dismiss_topics_tooltip}}" id='dismiss-topics' class='btn dismiss-read' {{action dismissRead "topics"}}>{{i18n topics.bulk.dismiss_topics}}</button>
+      <button title="{{i18n topics.bulk.dismiss_posts_tooltip}}" id='dismiss-posts' class='btn dismiss-read' {{action dismissRead "posts"}}>{{i18n topics.bulk.dismiss_posts}}</button>
     {{/if}}
     {{#if showResetNew}}
-      <button class='btn dismiss-read' {{action resetNew}}>{{i18n topics.bulk.dismiss_new}}</button>
+      <button id='dismiss-new' class='btn dismiss-read' {{action resetNew}}>{{i18n topics.bulk.dismiss_new}}</button>
     {{/if}}
 
-    <h3>
-      {{#if latest}}
+    {{#if latest}}
+      <div class="education">
+        {{{footerEducation}}}
+      </div>
+      <h3>
         {{footerMessage}}
         {{#if can_create_topic}}<a href='#' {{action createTopic}}>{{i18n topic.suggest_create_topic}}</a>{{/if}}
-      {{else}}
-        {{#if top}}
+      </h3>
+    {{else}}
+      {{#if top}}
+        <h3>
           {{#link-to "discovery.categories"}}{{i18n topic.browse_all_categories}}{{/link-to}}, {{#link-to 'discovery.latest'}}{{i18n topic.view_latest_topics}}{{/link-to}} {{i18n or}} {{i18n filters.top.other_periods}}
-          {{#unless yearly}}<a href="{{unbound showMoreYearlyUrl}}" class='btn'><i class="fa fa-calendar-o"></i>{{i18n filters.top.this_year}}</a>{{/unless}}
-          {{#unless monthly}}<a href="{{unbound showMoreMonthlyUrl}}" class='btn'><i class="fa fa-calendar-o"></i>{{i18n filters.top.this_month}}</a>{{/unless}}
-          {{#unless weekly}}<a href="{{unbound showMoreWeeklyUrl}}" class='btn'><i class="fa fa-calendar-o"></i>{{i18n filters.top.this_week}}</a>{{/unless}}
-          {{#unless daily}}<a href="{{unbound showMoreDailyUrl}}" class='btn'><i class="fa fa-calendar-o"></i>{{i18n filters.top.today}}</a>{{/unless}}
-        {{else}}
+        {{top-period-buttons period=period}}
+      {{else}}
+        <div class="education">
+            {{{footerEducation}}}
+        </div>
+        <h3>
           {{footerMessage}}{{#link-to "discovery.categories"}} {{i18n topic.browse_all_categories}}{{/link-to}} {{i18n or}} {{#link-to 'discovery.latest'}}{{i18n topic.view_latest_topics}}{{/link-to}}
-        {{/if}}
+        </h3>
       {{/if}}
-    </h3>
+    {{/if}}
   {{/if}}
 </footer>

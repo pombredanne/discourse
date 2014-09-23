@@ -21,7 +21,7 @@
   border: 1px solid rgba(0, 0, 0, 0.3);
 
   @include border-radius-all (6px);
-  box-shadow: 0 3px 7px rgba($primary, 0.3);
+  box-shadow: 0 3px 7px rgba(0,0,0, 0.3);
   background-clip: padding-box;
 }
 
@@ -49,10 +49,16 @@
   margin-left: -1px;
 }
 .modal-header {
+  // we need tighter spacing on mobile for header
+  // this clearfix under the modal title h3 pushes it way down
+  .clearfix {
+    display:none;
+  }
   h3 {
     color: $quaternary;
     font-size: 15px;
-    padding: 0 0 0 20px;
+    padding-left: 20px;
+    margin-bottom: 5px;
   }
 }
 .close {
@@ -148,5 +154,14 @@
   &.alert-success {
     background-color:  scale-color($success, $lightness: 90%);
     color: $success;
+  }
+}
+
+.delete-flag-modal, .agree-flag-modal {
+  .modal-inner-container {
+    width: 300px;
+  }
+  .btn {
+    float: none !important;
   }
 }

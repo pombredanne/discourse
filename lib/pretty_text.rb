@@ -67,6 +67,7 @@ module PrettyText
     decorate_context(ctx)
 
     ctx_load(ctx,
+      "public/javascripts/highlight.pack.js",
       "vendor/assets/javascripts/better_markdown.js",
       "app/assets/javascripts/defer/html-sanitizer-bundle.js",
       "app/assets/javascripts/discourse/dialects/dialect.js",
@@ -75,7 +76,7 @@ module PrettyText
       "app/assets/javascripts/discourse/lib/markdown.js"
     )
 
-    Dir["#{Rails.root}/app/assets/javascripts/discourse/dialects/**.js"].each do |dialect|
+    Dir["#{Rails.root}/app/assets/javascripts/discourse/dialects/**.js"].sort.each do |dialect|
       unless dialect =~ /\/dialect\.js$/
         ctx.load(dialect)
       end
@@ -202,13 +203,29 @@ module PrettyText
     doc.to_html
   end
 
+  class DetectedLink
+    attr_accessor :is_quote, :url
+
+    def initialize(url, is_quote=false)
+      @url = url
+      @is_quote = is_quote
+    end
+  end
+
+
   def self.extract_links(html)
     links = []
     doc = Nokogiri::HTML.fragment(html)
     # remove href inside quotes
     doc.css("aside.quote a").each { |l| l["href"] = "" }
+
     # extract all links from the post
-    doc.css("a").each { |l| links << l["href"] unless l["href"].blank? }
+    doc.css("a").each { |l|
+      unless l["href"].blank?
+        links << DetectedLink.new(l["href"])
+      end
+    }
+
     # extract links to quotes
     doc.css("aside.quote[data-topic]").each do |a|
       topic_id = a['data-topic']
@@ -218,7 +235,7 @@ module PrettyText
         url << "/#{post_number}"
       end
 
-      links << url
+      links << DetectedLink.new(url, true)
     end
 
     links
@@ -233,7 +250,7 @@ module PrettyText
 
     # If the user is not basic, strip links from their bio
     fragment = Nokogiri::HTML.fragment(string)
-    fragment.css('a').each {|a| a.replace(a.text) }
+    fragment.css('a').each {|a| a.replace(a.inner_html) }
     fragment.to_html
   end
 
@@ -246,7 +263,7 @@ module PrettyText
         uri = URI(href)
         site_uri ||= URI(Discourse.base_url)
         link["href"] = "#{site_uri}#{link['href']}" unless uri.host.present?
-      rescue URI::InvalidURIError
+      rescue URI::InvalidURIError, URI::InvalidComponentError
         # leave it
       end
     end

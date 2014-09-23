@@ -17,9 +17,7 @@ Discourse.PostStream = Em.Object.extend({
 
   notLoading: Em.computed.not('loading'),
 
-  filteredPostsCount: function(){
-    return this.get("stream").length;
-  }.property("stream.@each"),
+  filteredPostsCount: Em.computed.alias("stream.length"),
 
   /**
     Have we loaded any posts?
@@ -120,15 +118,15 @@ Discourse.PostStream = Em.Object.extend({
   streamFilters: function() {
     var result = {};
     if (this.get('summary')) { result.filter = "summary"; }
+    if (this.get('show_deleted')) { result.show_deleted = true; }
 
     var userFilters = this.get('userFilters');
     if (!Em.isEmpty(userFilters)) {
-      var userFiltersArray = this.get('userFilters').toArray();
-      if (userFiltersArray.length > 0) { result.username_filters = userFiltersArray.join(","); }
+      result.username_filters = userFilters.join(",");
     }
 
     return result;
-  }.property('userFilters.[]', 'summary'),
+  }.property('userFilters.[]', 'summary', 'show_deleted'),
 
   hasNoFilters: function() {
     var streamFilters = this.get('streamFilters');
@@ -186,6 +184,7 @@ Discourse.PostStream = Em.Object.extend({
   **/
   cancelFilter: function() {
     this.set('summary', false);
+    this.set('show_deleted', false);
     this.get('userFilters').clear();
   },
 
@@ -200,6 +199,11 @@ Discourse.PostStream = Em.Object.extend({
     return this.refresh();
   },
 
+  toggleDeleted: function() {
+    this.toggleProperty('show_deleted');
+    return this.refresh();
+  },
+
   /**
     Filter the stream to a particular user.
 
@@ -208,10 +212,11 @@ Discourse.PostStream = Em.Object.extend({
   toggleParticipant: function(username) {
     var userFilters = this.get('userFilters');
     this.set('summary', false);
+    this.set('show_deleted', true);
     if (userFilters.contains(username)) {
-      userFilters.remove(username);
+      userFilters.removeObject(username);
     } else {
-      userFilters.add(username);
+      userFilters.addObject(username);
     }
     return this.refresh();
   },
@@ -273,7 +278,6 @@ Discourse.PostStream = Em.Object.extend({
     if (idx !== -1) {
       // Insert the gap at the appropriate place
       stream.splice.apply(stream, [idx, 0].concat(gap));
-      stream.enumerableContentDidChange();
 
       var postIdx = currentPosts.indexOf(post);
       if (postIdx !== -1) {
@@ -286,6 +290,7 @@ Discourse.PostStream = Em.Object.extend({
           });
 
           delete self.get('gaps.before')[postId];
+          self.get('stream').enumerableContentDidChange();
         });
       }
     }
@@ -303,11 +308,14 @@ Discourse.PostStream = Em.Object.extend({
   fillGapAfter: function(post, gap) {
     var postId = post.get('id'),
         stream = this.get('stream'),
-        idx = stream.indexOf(postId);
+        idx = stream.indexOf(postId),
+        self = this;
 
     if (idx !== -1) {
       stream.pushObjects(gap);
-      return this.appendMore();
+      return this.appendMore().then(function() {
+        self.get('stream').enumerableContentDidChange();
+      });
     }
     return Ember.RSVP.resolve();
   },
@@ -627,12 +635,62 @@ Discourse.PostStream = Em.Object.extend({
   },
 
   /**
+    Returns the closest post given a postNumber that may not exist in the stream.
+    For example, if the user asks for a post that's deleted or otherwise outside the range.
+    This allows us to set the progress bar with the correct number.
+
+    @method closestPostForPostNumber
+    @param {Number} postNumber the post number we're looking for
+    @return {Post} the closest post
+    @see PostStream.closestPostNumberFor
+  **/
+  closestPostForPostNumber: function(postNumber) {
+    if (!this.get('hasPosts')) { return; }
+
+    var closest = null;
+    this.get('posts').forEach(function (p) {
+      if (!closest) {
+        closest = p;
+        return;
+      }
+
+      if (Math.abs(postNumber - p.get('post_number')) < Math.abs(closest.get('post_number') - postNumber)) {
+        closest = p;
+      }
+    });
+
+    return closest;
+  },
+
+  /**
+    Get the index of a post in the stream. (Use this for the topic progress bar.)
+
+    @param post the post to get the index of
+    @returns {Number} 1-starting index of the post, or 0 if not found
+    @see PostStream.progressIndexOfPostId
+  **/
+  progressIndexOfPost: function(post) {
+    return this.progressIndexOfPostId(post.get('id'));
+  },
+
+  /**
+    Get the index in the stream of a post id. (Use this for the topic progress bar.)
+
+    @param post_id - post id to search for
+    @returns {Number} 1-starting index of the post, or 0 if not found
+  **/
+  progressIndexOfPostId: function(post_id) {
+    return this.get('stream').indexOf(post_id) + 1;
+  },
+
+  /**
     Returns the closest post number given a postNumber that may not exist in the stream.
     For example, if the user asks for a post that's deleted or otherwise outside the range.
     This allows us to set the progress bar with the correct number.
 
     @method closestPostNumberFor
-    @param {Integer} postNumber the post number we're looking for
+    @param {Number} postNumber the post number we're looking for
+    @return {Number} a close post number
   **/
   closestPostNumberFor: function(postNumber) {
     if (!this.get('hasPosts')) { return; }
@@ -818,13 +876,14 @@ Discourse.PostStream = Em.Object.extend({
     // If the result was 404 the post is not found
     if (status === 404) {
       topic.set('errorTitle', I18n.t('topic.not_found.title'));
-      topic.set('errorBodyHtml', result.responseText);
+      topic.set('notFoundHtml', result.responseText);
       return;
     }
 
     // If the result is 403 it means invalid access
     if (status === 403) {
       topic.set('errorTitle', I18n.t('topic.invalid_access.title'));
+      topic.set('noRetry', true);
       if (Discourse.User.current()) {
         topic.set('message', I18n.t('topic.invalid_access.description'));
       } else {
@@ -846,9 +905,9 @@ Discourse.PostStream.reopenClass({
   create: function() {
     var postStream = this._super.apply(this, arguments);
     postStream.setProperties({
-      posts: Em.A(),
-      stream: Em.A(),
-      userFilters: Em.Set.create(),
+      posts: [],
+      stream: [],
+      userFilters: [],
       postIdentityMap: Em.Map.create(),
       summary: false,
       loaded: false,
